@@ -1,5 +1,6 @@
-# Nostr Relay Software
+# Nostr Team Relay Software
 
+This is a fork of the bitvora team-relay with modifications. 
 This relay software specializes in providing a Nostr relay to a team. This guide will help you set up and run the software on a Linux machine.
 
 ## Table of Contents
