@@ -75,8 +75,17 @@ func main() {
 	})
 
 	if !config.BlossomEnabled {
-		fmt.Println("running on :3334")
-		http.ListenAndServe(":3334", relay)
+		// Configure HTTP server with timeouts suitable for large file uploads
+		server := &http.Server{
+			Addr:         ":3334",
+			Handler:      relay,
+			ReadTimeout:  10 * time.Minute,  // Allow up to 10 minutes for reading request body
+			WriteTimeout: 10 * time.Minute,  // Allow up to 10 minutes for writing response
+			IdleTimeout:  2 * time.Minute,   // Keep connections alive for 2 minutes
+		}
+
+		fmt.Println("running on :3334 with extended timeouts for large uploads")
+		server.ListenAndServe()
 		return
 	}
 
@@ -116,8 +125,17 @@ func main() {
 		return true, "you're not part of the team'", 403
 	})
 
-	fmt.Println("running on :3334")
-	http.ListenAndServe(":3334", relay)
+	// Configure HTTP server with timeouts suitable for large file uploads
+	server := &http.Server{
+		Addr:         ":3334",
+		Handler:      relay,
+		ReadTimeout:  10 * time.Minute,  // Allow up to 10 minutes for reading request body
+		WriteTimeout: 10 * time.Minute,  // Allow up to 10 minutes for writing response
+		IdleTimeout:  2 * time.Minute,   // Keep connections alive for 2 minutes
+	}
+
+	fmt.Println("running on :3334 with extended timeouts for large uploads")
+	server.ListenAndServe()
 }
 
 func fetchNostrData(teamDomain string) {
