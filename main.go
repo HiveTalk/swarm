@@ -77,11 +77,13 @@ func main() {
 	if !config.BlossomEnabled {
 		// Configure HTTP server with timeouts suitable for large file uploads
 		server := &http.Server{
-			Addr:         ":3334",
-			Handler:      relay,
-			ReadTimeout:  10 * time.Minute,  // Allow up to 10 minutes for reading request body
-			WriteTimeout: 10 * time.Minute,  // Allow up to 10 minutes for writing response
-			IdleTimeout:  2 * time.Minute,   // Keep connections alive for 2 minutes
+			Addr:              ":3334",
+			Handler:           relay,
+			ReadTimeout:       15 * time.Minute, // Increased to 15 minutes for very large files
+			WriteTimeout:      15 * time.Minute, // Increased to 15 minutes
+			IdleTimeout:       5 * time.Minute,  // Increased idle timeout
+			ReadHeaderTimeout: 30 * time.Second, // Prevent slow header attacks
+			MaxHeaderBytes:    1 << 20,          // 1MB max header size
 		}
 
 		fmt.Println("running on :3334 with extended timeouts for large uploads")
@@ -92,15 +94,42 @@ func main() {
 	bl := blossom.New(relay, *config.BlossomURL)
 	bl.Store = blossom.EventStoreBlobIndexWrapper{Store: db, ServiceURL: bl.ServiceURL}
 	bl.StoreBlob = append(bl.StoreBlob, func(ctx context.Context, sha256 string, body []byte) error {
+		// Create context with timeout for large file operations
+		storeCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+		defer cancel()
 
 		file, err := fs.Create(*config.BlossomPath + sha256)
 		if err != nil {
 			return err
 		}
-		if _, err := io.Copy(file, bytes.NewReader(body)); err != nil {
-			return err
+		defer file.Close()
+
+		// Use streaming copy with context checking for large files
+		reader := bytes.NewReader(body)
+		buffer := make([]byte, 32*1024) // 32KB buffer for efficient copying
+
+		for {
+			select {
+			case <-storeCtx.Done():
+				return storeCtx.Err()
+			default:
+			}
+
+			n, err := reader.Read(buffer)
+			if n > 0 {
+				if _, writeErr := file.Write(buffer[:n]); writeErr != nil {
+					return writeErr
+				}
+			}
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return err
+			}
 		}
-		return nil
+
+		return file.Sync() // Ensure data is written to disk
 	})
 
 	bl.LoadBlob = append(bl.LoadBlob, func(ctx context.Context, sha256 string) (io.ReadSeeker, error) {
@@ -127,11 +156,13 @@ func main() {
 
 	// Configure HTTP server with timeouts suitable for large file uploads
 	server := &http.Server{
-		Addr:         ":3334",
-		Handler:      relay,
-		ReadTimeout:  10 * time.Minute,  // Allow up to 10 minutes for reading request body
-		WriteTimeout: 10 * time.Minute,  // Allow up to 10 minutes for writing response
-		IdleTimeout:  2 * time.Minute,   // Keep connections alive for 2 minutes
+		Addr:              ":3334",
+		Handler:           relay,
+		ReadTimeout:       15 * time.Minute, // Increased to 15 minutes for very large files
+		WriteTimeout:      15 * time.Minute, // Increased to 15 minutes
+		IdleTimeout:       5 * time.Minute,  // Increased idle timeout
+		ReadHeaderTimeout: 30 * time.Second, // Prevent slow header attacks
+		MaxHeaderBytes:    1 << 20,          // 1MB max header size
 	}
 
 	fmt.Println("running on :3334 with extended timeouts for large uploads")
