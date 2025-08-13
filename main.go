@@ -102,9 +102,9 @@ func main() {
 	})
 	bl.RejectUpload = append(bl.RejectUpload, func(ctx context.Context, event *nostr.Event, size int, ext string) (bool, string, int) {
 		// Check for 100MB size limit (100 * 1024 * 1024 bytes)
-		maxSize := 100 * 1024 * 1024
+		maxSize := 200 * 1024 * 1024
 		if size > maxSize {
-			return true, "file size exceeds 100MB limit", 413
+			return true, "file size exceeds 200MB limit", 413
 		}
 
 		for _, pubkey := range data.Names {
