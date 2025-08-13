@@ -151,7 +151,7 @@ func main() {
 			}
 		}
 
-		return true, "you're not part of the team'", 403
+		return true, "you're not part of the team", 403
 	})
 
 	// Configure HTTP server with timeouts suitable for large file uploads

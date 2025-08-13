@@ -1,4 +1,6 @@
 .env
 db/
 blossom/
-team-relay
+team-relayarchive
+core
+team
