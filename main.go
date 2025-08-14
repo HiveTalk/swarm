@@ -3,12 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/fiatjaf/eventstore/badger"
@@ -152,6 +155,100 @@ func main() {
 		}
 
 		return true, "you're not part of the team", 403
+	})
+
+	// Add custom mirror endpoint handler for Sakura compatibility
+	relay.Router().HandleFunc("/mirror", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "PUT" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Parse the request body to get source URL
+		var mirrorRequest struct {
+			URL string `json:"url"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&mirrorRequest); err != nil {
+			http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+			return
+		}
+
+		if mirrorRequest.URL == "" {
+			http.Error(w, "Missing source URL", http.StatusBadRequest)
+			return
+		}
+
+		// Extract blob hash from source URL
+		blobHash := extractSha256FromURL(mirrorRequest.URL)
+		if blobHash == "" {
+			http.Error(w, "Cannot extract blob hash from source URL", http.StatusBadRequest)
+			return
+		}
+
+		// Check if blob already exists
+		if _, err := fs.Open(*config.BlossomPath + blobHash); err == nil {
+			// Blob already exists, return success
+			response := map[string]interface{}{
+				"sha256": blobHash,
+				"url":    *config.BlossomURL + "/" + blobHash,
+				"size":   0, // We don't know the size without reading the file
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(response)
+			return
+		}
+
+		// Download blob from source URL
+		resp, err := http.Get(mirrorRequest.URL)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to fetch source blob: %v", err), http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			http.Error(w, fmt.Sprintf("Source server returned %d", resp.StatusCode), http.StatusBadGateway)
+			return
+		}
+
+		// Read and verify the blob content
+		blobData, err := io.ReadAll(resp.Body)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to read blob data: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Verify the hash matches
+		hasher := sha256.New()
+		hasher.Write(blobData)
+		actualHash := hex.EncodeToString(hasher.Sum(nil))
+
+		if actualHash != blobHash {
+			http.Error(w, "Blob hash mismatch", http.StatusBadRequest)
+			return
+		}
+
+		// Store the blob using the existing StoreBlob functionality
+		ctx := r.Context()
+		for _, storeFunc := range bl.StoreBlob {
+			if err := storeFunc(ctx, blobHash, blobData); err != nil {
+				http.Error(w, fmt.Sprintf("Failed to store blob: %v", err), http.StatusInternalServerError)
+				return
+			}
+		}
+
+		// Return success response
+		response := map[string]interface{}{
+			"sha256": blobHash,
+			"url":    *config.BlossomURL + "/" + blobHash,
+			"size":   len(blobData),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+
+		log.Printf("Successfully mirrored blob %s from %s", blobHash, mirrorRequest.URL)
 	})
 
 	// Configure HTTP server with timeouts suitable for large file uploads
@@ -309,4 +406,35 @@ func newPostgresBackend() DBBackend {
 		DatabaseURL: fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
 			*config.PostgresUser, *config.PostgresPassword, *config.PostgresHost, *config.PostgresPort, *config.PostgresDB),
 	}
+}
+
+// extractSha256FromURL extracts the SHA256 hash from a blossom URL
+// Expected format: https://server.com/sha256hash or https://server.com/sha256hash.ext
+func extractSha256FromURL(url string) string {
+	// Remove the protocol and domain
+	parts := strings.Split(url, "/")
+	if len(parts) < 4 {
+		return ""
+	}
+
+	// Get the last part which should be the hash (possibly with extension)
+	hashPart := parts[len(parts)-1]
+
+	// Remove file extension if present
+	if dotIndex := strings.LastIndex(hashPart, "."); dotIndex != -1 {
+		hashPart = hashPart[:dotIndex]
+	}
+
+	// Validate that it looks like a SHA256 hash (64 hex characters)
+	if len(hashPart) == 64 {
+		// Check if all characters are valid hex
+		for _, char := range hashPart {
+			if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) {
+				return ""
+			}
+		}
+		return strings.ToLower(hashPart)
+	}
+
+	return ""
 }
