@@ -8,6 +8,12 @@ Also forked a copy of Front ends for testing use with the swarm blossom relay,
 bouquet and sakura. They are early prototypes so beware when syncing, there
 might be issues. Bouquet is good for bulk syncing, Sakura is good for individual file mirroring. 
 
+Buggy Notes:
+- Sakura syncs images well but videos might sync to type application/octet-stream and then they are binaries, will need to fix this on tha sakura
+- Sakura takes a really long time to login be patient
+- Bouquet syncing is inconsistent, unclear why
+- Bouquet - there is a cors error on the bouquet on vercel but not on original bouquet
+
 WARNING: Swarm server is small, so we might run out of space, also max 100MB uploads
 
 Please do test it out as proof of concept
