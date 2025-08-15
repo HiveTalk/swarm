@@ -87,8 +87,15 @@ export class BlossomAPI {
     const url = `${baseUrl}/list/${pubkey}`;
     
     try {
+      console.log(`🔍 [DEBUG] Listing blobs from: ${url}`);
+      console.log(`🔍 [DEBUG] Using pubkey: ${pubkey}`);
+      console.log(`🔍 [DEBUG] Using signing method: ${signingMethod}`);
+      
       const authEvent = await createBlossomAuthEvent('list', signingMethod, undefined, 'List Blobs');
       const authHeader = encodeAuthEvent(authEvent);
+      
+      console.log(`🔍 [DEBUG] Auth event created:`, authEvent);
+      console.log(`🔍 [DEBUG] Auth header:`, authHeader);
 
       const response = await fetch(url, {
         method: 'GET',
@@ -97,13 +104,27 @@ export class BlossomAPI {
         },
       });
 
+      console.log(`🔍 [DEBUG] List blobs response status: ${response.status}`);
+      console.log(`🔍 [DEBUG] List blobs response headers:`, Object.fromEntries(response.headers.entries()));
+
       if (!response.ok) {
-        throw new Error(`Failed to list blobs: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`🔍 [DEBUG] List blobs error response body:`, errorText);
+        throw new Error(`Failed to list blobs: ${response.status} - ${errorText}`);
       }
 
-      return await response.json();
+      const data = await response.json();
+      console.log(`🔍 [DEBUG] List blobs response data:`, data);
+      return data;
     } catch (error) {
-      console.error('List blobs error:', error);
+      console.error('🔍 [DEBUG] List blobs error:', error);
+      console.error('🔍 [DEBUG] List blobs error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        serverUrl: this.server.url,
+        pubkey,
+        signingMethod
+      });
       throw error;
     }
   }
@@ -219,15 +240,28 @@ export class BlossomAPI {
    */
   async getServerInfo(): Promise<Record<string, unknown>> {
     try {
+      console.log(`🔍 [DEBUG] Fetching server info from: ${this.server.url}`);
       const response = await fetch(this.server.url);
       
+      console.log(`🔍 [DEBUG] Server info response status: ${response.status}`);
+      console.log(`🔍 [DEBUG] Server info response headers:`, Object.fromEntries(response.headers.entries()));
+      
       if (!response.ok) {
-        throw new Error(`Failed to get server info: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`🔍 [DEBUG] Server info error response body:`, errorText);
+        throw new Error(`Failed to get server info: ${response.status} - ${errorText}`);
       }
 
-      return await response.json();
+      const data = await response.json();
+      console.log(`🔍 [DEBUG] Server info response data:`, data);
+      return data;
     } catch (error) {
-      console.error('Get server info error:', error);
+      console.error('🔍 [DEBUG] Get server info error:', error);
+      console.error('🔍 [DEBUG] Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        serverUrl: this.server.url
+      });
       throw error;
     }
   }

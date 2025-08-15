@@ -50,16 +50,19 @@ export function useServerHealth({
       };
 
       try {
+        console.log(`🔍 [DEBUG] Health check starting for server: ${serverUrl}`);
         // Try to list blobs as a health check
         const api = new EnhancedBlossomAPI({ url: serverUrl, name: 'temp' });
         await api.listBlobs(user.pubkey, signingMethod);
         
         status.isHealthy = true;
         status.responseTime = Date.now() - startTime;
+        console.log(`🔍 [DEBUG] Health check SUCCESS for ${serverUrl} (${status.responseTime}ms)`);
       } catch (error) {
         status.isHealthy = false;
         status.error = error instanceof Error ? error.message : 'Health check failed';
         status.responseTime = Date.now() - startTime;
+        console.log(`🔍 [DEBUG] Health check FAILED for ${serverUrl} (${status.responseTime}ms):`, error);
       }
 
       statuses.push(status);
