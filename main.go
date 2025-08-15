@@ -136,7 +136,15 @@ func main() {
 	})
 
 	bl.LoadBlob = append(bl.LoadBlob, func(ctx context.Context, sha256 string) (io.ReadSeeker, error) {
-		return fs.Open(*config.BlossomPath + sha256)
+		filePath := *config.BlossomPath + sha256
+		log.Printf("LoadBlob: Attempting to open file at path: %s", filePath)
+		file, err := fs.Open(filePath)
+		if err != nil {
+			log.Printf("LoadBlob: Failed to open file %s: %v", filePath, err)
+			return nil, err
+		}
+		log.Printf("LoadBlob: Successfully opened file %s", filePath)
+		return file, nil
 	})
 	bl.DeleteBlob = append(bl.DeleteBlob, func(ctx context.Context, sha256 string) error {
 		return fs.Remove(*config.BlossomPath + sha256)
