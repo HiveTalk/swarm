@@ -235,10 +235,67 @@ func main() {
 
 		log.Printf("List blobs request for pubkey: %s", pubkey)
 
-		// For now, return an empty array since we don't have blob indexing by pubkey
-		// This will make the health check pass
+		// Read all files from the blossom directory
+		blobs := []map[string]interface{}{}
+
+		if config.BlossomPath != nil {
+			file, err := fs.Open(*config.BlossomPath)
+			if err != nil {
+				log.Printf("Error opening blossom directory: %v", err)
+			} else {
+				defer file.Close()
+				fileInfos, err := file.Readdir(-1)
+				if err != nil {
+					log.Printf("Error reading blossom directory: %v", err)
+				} else {
+					for _, fileInfo := range fileInfos {
+						if !fileInfo.IsDir() {
+							fileName := fileInfo.Name()
+							// Validate that it looks like a SHA256 hash (64 hex characters)
+							if len(fileName) == 64 {
+								isValidHash := true
+								for _, char := range fileName {
+									if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) {
+										isValidHash = false
+										break
+									}
+								}
+
+								if isValidHash {
+									// Detect MIME type by reading the first 512 bytes
+									contentType := "application/octet-stream" // Default fallback
+									filePath := *config.BlossomPath + fileName
+									if blobFile, err := fs.Open(filePath); err == nil {
+										buffer := make([]byte, 512)
+										if n, err := blobFile.Read(buffer); err == nil && n > 0 {
+											detectedType := http.DetectContentType(buffer[:n])
+											if detectedType != "" {
+												contentType = detectedType
+											}
+										}
+										blobFile.Close()
+									}
+
+									blob := map[string]interface{}{
+										"sha256":   strings.ToLower(fileName),
+										"size":     fileInfo.Size(),
+										"type":     contentType,
+										"url":      *config.BlossomURL + "/" + strings.ToLower(fileName),
+										"uploaded": fileInfo.ModTime().Unix(),
+									}
+									blobs = append(blobs, blob)
+									log.Printf("Found blob: %s (size: %d, type: %s)", fileName, fileInfo.Size(), contentType)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		log.Printf("Returning %d blobs for pubkey %s", len(blobs), pubkey)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]interface{}{})
+		json.NewEncoder(w).Encode(blobs)
 	})
 
 	// Add custom mirror endpoint handler for Sakura compatibility
