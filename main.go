@@ -166,30 +166,20 @@ func main() {
 	})
 
 	// Add custom HEAD handler for blob serving (Sakura availability checks)
-	// We need to intercept HEAD requests before they reach the blossom handler
-	// Let's modify the server's handler to wrap the existing one
+	// Only intercept HEAD requests for blob hashes, leave everything else alone
 	originalMux := relay.Router()
-	_ = originalMux // Temporarily unused
-	/*wrappedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Handle server info requests for Sakura health checks
-		if r.Method == "GET" && r.URL.Path == "/" {
-			w.Header().Set("Content-Type", "application/json")
-			serverInfo := map[string]interface{}{
-				"name":        "Swarm Blossom Server",
-				"description": "HiveTalk Swarm Blossom Relay",
-				"version":     "1.0.0",
-				"blossom":     true,
-				"endpoints": map[string]string{
-					"upload": "/upload",
-					"mirror": "/mirror",
-					"list":   "/list/{pubkey}",
-					"blob":   "/{sha256}",
-				},
-			}
-			json.NewEncoder(w).Encode(serverInfo)
+	wrappedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Add CORS headers for all requests
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, HEAD, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		// Handle preflight OPTIONS requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
 			return
 		}
-
+		// Only intercept HEAD requests for blob hashes
 		if r.Method == "HEAD" {
 			// Extract potential blob hash from URL path
 			path := strings.TrimPrefix(r.URL.Path, "/")
@@ -223,9 +213,9 @@ func main() {
 			}
 		}
 
-		// Not a HEAD request for a blob hash, pass to original handler
+		// For all other requests (including GET, POST, etc.), pass to original handler
 		originalMux.ServeHTTP(w, r)
-	})*/
+	})
 
 
 
@@ -348,7 +338,7 @@ func main() {
 	// Configure HTTP server with timeouts suitable for large file uploads
 	server := &http.Server{
 		Addr:              ":3334",
-		Handler:           relay, // Temporarily use original handler to test
+		Handler:           wrappedHandler, // Use our wrapped handler that intercepts HEAD requests
 		ReadTimeout:       15 * time.Minute, // Increased to 15 minutes for very large files
 		WriteTimeout:      15 * time.Minute, // Increased to 15 minutes
 		IdleTimeout:       5 * time.Minute,  // Increased idle timeout
