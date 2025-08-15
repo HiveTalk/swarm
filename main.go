@@ -74,7 +74,7 @@ func main() {
 				return false, "" // allow
 			}
 		}
-		return true, "you're not part of the team"
+		return true, "you are not part of the team"
 	})
 
 	if !config.BlossomEnabled {
@@ -162,62 +162,8 @@ func main() {
 			}
 		}
 
-		return true, "you're not part of the team", 403
+		return true, "you are not part of the team", 403
 	})
-
-	// Add custom HEAD handler for blob serving (Sakura availability checks)
-	// Only intercept HEAD requests for blob hashes, leave everything else alone
-	originalMux := relay.Router()
-	wrappedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Add CORS headers for all requests
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, HEAD, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-		// Handle preflight OPTIONS requests
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		// Only intercept HEAD requests for blob hashes
-		if r.Method == "HEAD" {
-			// Extract potential blob hash from URL path
-			path := strings.TrimPrefix(r.URL.Path, "/")
-
-			// Check if this looks like a blob hash (64 hex characters)
-			if len(path) == 64 {
-				isValidHash := true
-				for _, char := range path {
-					if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) {
-						isValidHash = false
-						break
-					}
-				}
-
-				if isValidHash {
-					// Check if blob file exists
-					filePath := *config.BlossomPath + strings.ToLower(path)
-					if _, err := fs.Stat(filePath); err == nil {
-						// File exists, return 200 with appropriate headers
-						w.Header().Set("Content-Type", "application/octet-stream")
-						w.WriteHeader(http.StatusOK)
-						log.Printf("HEAD request for blob %s: Found", path)
-						return
-					} else {
-						// File doesn't exist, return 404
-						w.WriteHeader(http.StatusNotFound)
-						log.Printf("HEAD request for blob %s: Not found", path)
-						return
-					}
-				}
-			}
-		}
-
-		// For all other requests (including GET, POST, etc.), pass to original handler
-		originalMux.ServeHTTP(w, r)
-	})
-
-
 
 	// Add custom list endpoint for Sakura health checks
 	relay.Router().HandleFunc("/list/", func(w http.ResponseWriter, r *http.Request) {
@@ -395,7 +341,7 @@ func main() {
 	// Configure HTTP server with timeouts suitable for large file uploads
 	server := &http.Server{
 		Addr:              ":3334",
-		Handler:           wrappedHandler, // Use our wrapped handler that intercepts HEAD requests
+		Handler:           relay,
 		ReadTimeout:       15 * time.Minute, // Increased to 15 minutes for very large files
 		WriteTimeout:      15 * time.Minute, // Increased to 15 minutes
 		IdleTimeout:       5 * time.Minute,  // Increased idle timeout
