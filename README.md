@@ -1,7 +1,17 @@
-# Nostr Team Relay Software
+# Swarm: Nostr Team Relay Software
 
 This is a fork of the bitvora team-relay with modifications. 
-This relay software specializes in providing a Nostr relay to a team. This guide will help you set up and run the software on a Linux machine.
+This relay software specializes in providing a Nostr relay to a team. 
+This guide will help you set up and run the software on a Linux machine.
+
+Also forked a copy of Front ends for testing use with the swarm blossom relay,
+bouquet and sakura. They are early prototypes so beware when syncing, there
+might be issues. Bouquet is good for bulk syncing, Sakura is good for individual file mirroring. 
+
+WARNING: Swarm server is small, so we might run out of space, also max 100MB uploads
+
+Please do test it out as proof of concept
+
 
 ## Table of Contents
 
