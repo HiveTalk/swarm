@@ -916,6 +916,7 @@ export class EnhancedBlossomAPI extends BlossomAPI {
     }
 
     console.log(`🔍 Checking blob ${blobHash} availability across ${this.userServerList.servers.length} servers...`);
+    console.log(`🔍 Servers being checked:`, this.userServerList.servers);
 
     const checkPromises = this.userServerList.servers.map(async (serverUrl) => {
       try {
