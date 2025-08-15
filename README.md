@@ -11,6 +11,7 @@ might be issues. Bouquet is good for bulk syncing, Sakura is good for individual
 Buggy Notes:
 - Sakura syncs images well but videos might sync to type application/octet-stream and then they are binaries, will need to fix this on tha sakura
 - Sakura takes a really long time to login be patient
+- Fixed some syncing issue bugs with Sakura, as well as refresh page will not log user out anymore
 - Bouquet syncing is inconsistent, unclear why
 - Bouquet - there is a cors error on the bouquet on vercel but not on original bouquet
 
