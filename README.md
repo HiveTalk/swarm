@@ -14,7 +14,7 @@ Buggy Notes:
 - Bouquet syncing is inconsistent, unclear why
 - Bouquet - there is a cors error on the bouquet on vercel but not on original bouquet
 
-WARNING: Swarm server is small, so we might run out of space, also max 100MB uploads
+WARNING: Swarm server is small, so we might run out of space, also max size per upload is 100MB
 
 Please do test it out as proof of concept
 
