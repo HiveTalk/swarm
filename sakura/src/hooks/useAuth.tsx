@@ -24,25 +24,53 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [needsPassword, setNeedsPassword] = useState(false); // For nsec users who need to unlock
 
   useEffect(() => {
-    // Check if user was previously logged in with extension
-    const savedPubkey = localStorage.getItem('sakura_pubkey');
-    const savedLoginMethod = localStorage.getItem('sakura_login_method') as 'extension' | 'nsec' | null;
-    
-    if (savedPubkey && savedLoginMethod === 'extension' && isNostrAvailable()) {
-      setLoginMethod('extension');
-      loadUser(savedPubkey, 'extension');
-      return;
-    }
-    
-    // Check if user has stored private key
-    if (hasStoredPrivateKey() && savedLoginMethod === 'nsec') {
-      setLoginMethod('nsec');
-      setNeedsPassword(true); // User needs to enter password to unlock
+    const initializeAuth = async () => {
+      // Check if user was previously logged in with extension
+      const savedPubkey = localStorage.getItem('sakura_pubkey');
+      const savedLoginMethod = localStorage.getItem('sakura_login_method') as 'extension' | 'nsec' | null;
+      
+      if (savedPubkey && savedLoginMethod === 'extension') {
+        // For extension users, wait a bit for the extension to load
+        // and retry a few times if needed
+        let attempts = 0;
+        const maxAttempts = 10;
+        const checkInterval = 100; // 100ms intervals
+        
+        const checkExtension = () => {
+          if (isNostrAvailable()) {
+            setLoginMethod('extension');
+            loadUser(savedPubkey, 'extension');
+            return;
+          }
+          
+          attempts++;
+          if (attempts < maxAttempts) {
+            setTimeout(checkExtension, checkInterval);
+          } else {
+            // Extension not available after retries, log out
+            console.warn('Nostr extension not available after retries, logging out');
+            localStorage.removeItem('sakura_pubkey');
+            localStorage.removeItem('sakura_login_method');
+            setLoading(false);
+          }
+        };
+        
+        checkExtension();
+        return;
+      }
+      
+      // Check if user has stored private key
+      if (hasStoredPrivateKey() && savedLoginMethod === 'nsec') {
+        setLoginMethod('nsec');
+        setNeedsPassword(true); // User needs to enter password to unlock
+        setLoading(false);
+        return;
+      }
+      
       setLoading(false);
-      return;
-    }
-    
-    setLoading(false);
+    };
+
+    initializeAuth();
   }, []);
 
   const loadUser = useCallback(async (pubkey: string, method: 'extension' | 'nsec') => {
