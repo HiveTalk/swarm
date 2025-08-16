@@ -2,14 +2,16 @@
 
 This is a fork of the swarm team-relay with modifications for Swarm.hivetalk.org This relay software specializes in providing a Nostr relay to a team.  This guide will help you set up and run the software on a Linux machine.
 
+In the .env file, the team domain is used to reject non team members, only members in nostr.json are allowed for the specified team domain.
+
 Additional features we added for production use:
-- Blossom - added read and write timeouts
-- Blossom - prevent slow header attacks, max header size
-- Blossom - max size upload
-- Blossom - added /mirror endpoint to allow for syncing content with other relays
-- Blossom - added /list endpoint to allow for listing content for a specific user
-- Blossom and Relay  - added team domain to reject non team members, only members in nostr.json are allowed for the specified team domain in .env
-- Relay Kinds - add support to limit kinds allowed
+- Blossom
+   - added read and write timeouts
+   - prevent slow header attacks, max header size
+   - max size upload
+   - added /mirror endpoint to allow for syncing content with other relays
+   - added /list endpoint to allow for listing content for a specific user
+- Relay Kinds - add support to limit kinds allowed, kinds specified in .env file
 
 
 ## For Testing
