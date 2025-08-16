@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +40,7 @@ type Config struct {
 	BlossomEnabled   bool
 	BlossomPath      *string
 	BlossomURL       *string
+	AllowedKinds     []int
 }
 
 type NostrData struct {
@@ -69,12 +71,33 @@ func main() {
 	}()
 
 	relay.RejectEvent = append(relay.RejectEvent, func(ctx context.Context, event *nostr.Event) (reject bool, msg string) {
+		// Check if user is part of the team
+		isTeamMember := false
 		for _, pubkey := range data.Names {
 			if event.PubKey == pubkey {
-				return false, "" // allow
+				isTeamMember = true
+				break
 			}
 		}
-		return true, "you are not part of the team"
+		if !isTeamMember {
+			return true, "you are not part of the team"
+		}
+
+		// Check if event kind is allowed
+		if len(config.AllowedKinds) > 0 {
+			isKindAllowed := false
+			for _, allowedKind := range config.AllowedKinds {
+				if event.Kind == allowedKind {
+					isKindAllowed = true
+					break
+				}
+			}
+			if !isKindAllowed {
+				return true, fmt.Sprintf("event kind %d is not allowed", event.Kind)
+			}
+		}
+
+		return false, "" // allow
 	})
 
 	if !config.BlossomEnabled {
@@ -403,6 +426,7 @@ func LoadConfig() Config {
 		BlossomEnabled:   getEnvBool("BLOSSOM_ENABLED"),
 		BlossomPath:      getEnvNullable("BLOSSOM_PATH"),
 		BlossomURL:       getEnvNullable("BLOSSOM_URL"),
+		AllowedKinds:     parseAllowedKinds(getEnvNullable("ALLOWED_KINDS")),
 	}
 
 	relay.Info.Name = config.RelayName
@@ -452,6 +476,38 @@ func getEnvNullable(key string) *string {
 		return nil
 	}
 	return &value
+}
+
+func parseAllowedKinds(allowedKindsStr *string) []int {
+	if allowedKindsStr == nil || strings.TrimSpace(*allowedKindsStr) == "" {
+		return []int{} // Empty slice means allow all kinds
+	}
+
+	kindsStr := strings.TrimSpace(*allowedKindsStr)
+	kindStrings := strings.Split(kindsStr, ",")
+	var kinds []int
+
+	for _, kindStr := range kindStrings {
+		kindStr = strings.TrimSpace(kindStr)
+		if kindStr == "" {
+			continue
+		}
+
+		kind, err := strconv.Atoi(kindStr)
+		if err != nil {
+			log.Printf("Warning: Invalid kind '%s' in ALLOWED_KINDS, skipping", kindStr)
+			continue
+		}
+		kinds = append(kinds, kind)
+	}
+
+	if len(kinds) > 0 {
+		log.Printf("Relay configured to only allow kinds: %v", kinds)
+	} else {
+		log.Printf("Relay configured to allow all kinds")
+	}
+
+	return kinds
 }
 
 type DBBackend interface {
