@@ -101,6 +101,9 @@ func main() {
 		return false, "" // allow
 	})
 
+	// Setup front page handler
+	setupFrontPageHandler(relay, config)
+
 	if !config.BlossomEnabled {
 		// Configure HTTP server with timeouts suitable for large file uploads
 		server := &http.Server{
