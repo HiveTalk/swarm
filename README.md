@@ -1,23 +1,28 @@
 # Swarm: Nostr Team Relay Software
 
-This is a fork of the bitvora team-relay with modifications. 
-This relay software specializes in providing a Nostr relay to a team. 
-This guide will help you set up and run the software on a Linux machine.
+This is a fork of the bitvora team-relay with modifications for Swarm.hivetalk.org This relay software specializes in providing a Nostr relay to a team.  This guide will help you set up and run the software on a Linux machine.
 
-Also forked a copy of Front ends for testing use with the swarm blossom relay,
-bouquet and sakura. They are early prototypes so beware when syncing, there
-might be issues. Bouquet is good for bulk syncing, Sakura is good for individual file mirroring. 
+Additional features we added for production use:
+- Blossom - added read and write timeouts
+- Blossom - prevent slow header attacks, max header size
+- Blossom - max size upload
+- Blossom - added /mirror endpoint to allow for syncing content with other relays
+- Blossom - added /list endpoint to allow for listing content for a specific user
+- Blossom and Relay  - added team domain to reject non team members, only members in nostr.json are allowed for the specified team domain in .env
+- Relay Kinds - add support to limit kinds allowed
+
+
+## For Testing
+For convenience, this repository has a forked copy of Frontends for testing use with the swarm blossom relay, bouquet and sakura. They are early prototypes so beware when syncing, there might be issues. Bouquet is good for bulk syncing, Sakura is good for individual file mirroring. 
 
 Buggy Notes:
 - Sakura syncs images well but videos might sync to type application/octet-stream and then they are binaries, will need to fix this on tha sakura
 - Sakura takes a really long time to login be patient
 - Fixed some syncing issue bugs with Sakura, as well as refresh page will not log user out anymore
-- Bouquet syncing is inconsistent, unclear why
+- Bouquet syncing is inconsistent, needs investigation
 - Bouquet - there is a cors error on the bouquet on vercel but not on original bouquet
 
-WARNING: Swarm server is small, so we might run out of space, also max size per upload is 100MB
-
-Please do test it out as proof of concept
+WARNING: Swarm server is a small testing instance restricted to nostr.json pubkeys on hivetalk.org also max size per upload is 200MB
 
 
 ## Table of Contents
