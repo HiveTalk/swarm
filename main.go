@@ -41,6 +41,7 @@ type Config struct {
 	BlossomPath      *string
 	BlossomURL       *string
 	AllowedKinds     []int
+	MaxUploadSizeMB  int
 }
 
 type NostrData struct {
@@ -173,10 +174,10 @@ func main() {
 		return fs.Remove(*config.BlossomPath + sha256)
 	})
 	bl.RejectUpload = append(bl.RejectUpload, func(ctx context.Context, event *nostr.Event, size int, ext string) (bool, string, int) {
-		// Check for 100MB size limit (100 * 1024 * 1024 bytes)
-		maxSize := 200 * 1024 * 1024
+		// Check for configurable size limit
+		maxSize := config.MaxUploadSizeMB * 1024 * 1024
 		if size > maxSize {
-			return true, "file size exceeds 200MB limit", 413
+			return true, fmt.Sprintf("file size exceeds %dMB limit", config.MaxUploadSizeMB), 413
 		}
 
 		for _, pubkey := range data.Names {
@@ -427,6 +428,7 @@ func LoadConfig() Config {
 		BlossomPath:      getEnvNullable("BLOSSOM_PATH"),
 		BlossomURL:       getEnvNullable("BLOSSOM_URL"),
 		AllowedKinds:     parseAllowedKinds(getEnvNullable("ALLOWED_KINDS")),
+		MaxUploadSizeMB:  getEnvIntWithDefault("MAX_UPLOAD_SIZE_MB", 200),
 	}
 
 	relay.Info.Name = config.RelayName
@@ -476,6 +478,19 @@ func getEnvNullable(key string) *string {
 		return nil
 	}
 	return &value
+}
+
+func getEnvIntWithDefault(key string, defaultValue int) int {
+	value, exists := os.LookupEnv(key)
+	if !exists {
+		return defaultValue
+	}
+	intValue, err := strconv.Atoi(value)
+	if err != nil {
+		log.Printf("Warning: Invalid integer value '%s' for %s, using default %d", value, key, defaultValue)
+		return defaultValue
+	}
+	return intValue
 }
 
 func parseAllowedKinds(allowedKindsStr *string) []int {
