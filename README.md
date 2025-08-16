@@ -25,6 +25,10 @@ Buggy Notes:
 - Bouquet - there is a cors error on the bouquet deploy on vercel
 - works with alby and nos2x, may have issues with nos2x-fox
 
+Live instances at:
+- https://sakura-beta-ochre.vercel.app/
+- https://bouquet.slidestr.net/
+
 
 ## Table of Contents
 
