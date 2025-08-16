@@ -12,6 +12,8 @@ Additional features we added for production use:
    - added /mirror endpoint to allow for syncing content with other relays
    - added /list endpoint to allow for listing content for a specific user
 - Relay Kinds - add support to limit kinds allowed, kinds specified in .env file
+- Frontend
+   - added front page with relay and blossom information
 
 
 ## For Testing
