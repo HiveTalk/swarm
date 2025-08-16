@@ -1,6 +1,6 @@
 # Swarm: Nostr Team Relay Software
 
-This is a fork of the bitvora team-relay with modifications for Swarm.hivetalk.org This relay software specializes in providing a Nostr relay to a team.  This guide will help you set up and run the software on a Linux machine.
+This is a fork of the swarm team-relay with modifications for Swarm.hivetalk.org This relay software specializes in providing a Nostr relay to a team.  This guide will help you set up and run the software on a Linux machine.
 
 Additional features we added for production use:
 - Blossom - added read and write timeouts
@@ -48,21 +48,21 @@ WARNING: Swarm server is a small testing instance restricted to nostr.json pubke
 
     ```env
 
-    RELAY_NAME="Bitvora"
+    RELAY_NAME="Swarm"
     RELAY_PUBKEY="8ad8f1f78c8e11966242e28a7ca15c936b23a999d5fb91bfe4e4472e2d6eaf55"
-    RELAY_DESCRIPTION="Bitvora Team Relay"
+    RELAY_DESCRIPTION="Swarm Team Relay"
 
     DB_ENGINE="lmdb" # lmdb, badger, postgres
     DB_PATH="db/" # only needed for lmdb, badger
 
    # only needed for postgres
-    POSTGRES_USER=bitvora
+    POSTGRES_USER=swarm
     POSTGRES_PASSWORD=password
     POSTGRES_DB=relay
     POSTGRES_HOST=localhost
     POSTGRES_PORT=5437
 
-    TEAM_DOMAIN="bitvora.com"
+    TEAM_DOMAIN="swarm.hivetalk.org"
     BLOSSOM_ENABLED="true"
     BLOSSOM_PATH="blossom/"
     BLOSSOM_URL="http://localhost:3334"
@@ -74,8 +74,8 @@ WARNING: Swarm server is a small testing instance restricted to nostr.json pubke
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/bitvora/team-relay.git
-   cd team-relay
+   git clone https://github.com/hivetalk/swarm.git
+   cd swarm
    ```
 
 2. Build the application:
