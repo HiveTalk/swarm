@@ -15,6 +15,9 @@ Additional features we added for production use:
 - Frontend
    - added front page with relay and blossom information
 
+TODO: 
+- Turn the front end of the relay into an upload and sync client similar to bouquet w/nostr login
+- Add an admin panel that allows administration of users and policies.
 
 <img width="1075" height="682" alt="Screenshot 2025-08-16 at 6 32 59 PM" src="https://github.com/user-attachments/assets/30ac25d6-658e-411d-a656-317e51053d0e" />
 
