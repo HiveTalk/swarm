@@ -104,6 +104,11 @@ func main() {
 	// Setup front page handler
 	setupFrontPageHandler(relay, config)
 
+	// Add handler for TeamHive.png
+	relay.Router().HandleFunc("/public/TeamHive.png", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "./public/TeamHive.png")
+	})
+
 	if !config.BlossomEnabled {
 		// Configure HTTP server with timeouts suitable for large file uploads
 		server := &http.Server{

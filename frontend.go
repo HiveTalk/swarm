@@ -42,6 +42,19 @@ const frontPageTemplate = `<!DOCTYPE html>
             margin-bottom: 3rem;
         }
         
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+        }
+        
+        .header-logo {
+            width: 100px;
+            height: 100px;
+            object-fit: contain;
+        }
+        
         .header h1 {
             font-size: 3rem;
             margin-bottom: 0.5rem;
@@ -179,7 +192,10 @@ const frontPageTemplate = `<!DOCTYPE html>
 <body>
     <div class="container">
         <div class="header">
-            <h1>{{.RelayName}}</h1>
+            <div class="header-content">
+                <img src="/public/TeamHive.png" alt="TeamHive Logo" class="header-logo">
+                <h1>{{.RelayName}}</h1>
+            </div>
             <p>{{.RelayDescription}}</p>
         </div>
         
