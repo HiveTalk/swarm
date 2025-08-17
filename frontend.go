@@ -15,6 +15,20 @@ const frontPageTemplate = `<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.RelayName}} - Nostr Relay & Blossom Server</title>
+    
+    <!-- Open Graph / Link Preview Meta Tags -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="{{.RelayName}} - Nostr Relay & Blossom Server">
+    <meta property="og:description" content="{{.RelayDescription}} - Team-based Nostr relay with Blossom file storage">
+    <meta property="og:image" content="https://{{.TeamDomain}}/public/TeamHive.png">
+    <meta property="og:url" content="https://{{.TeamDomain}}">
+    
+    <!-- Twitter Card Meta Tags -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="{{.RelayName}} - Nostr Relay & Blossom Server">
+    <meta name="twitter:description" content="{{.RelayDescription}} - Team-based Nostr relay with Blossom file storage">
+    <meta name="twitter:image" content="https://{{.TeamDomain}}/public/TeamHive.png">
+    
     <style>
         * {
             margin: 0;
