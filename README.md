@@ -16,6 +16,10 @@ Additional features we added for production use:
    - added front page with relay and blossom information
 
 
+<img width="1075" height="682" alt="Screenshot 2025-08-16 at 6 32 59 PM" src="https://github.com/user-attachments/assets/30ac25d6-658e-411d-a656-317e51053d0e" />
+
+<img width="1085" height="681" alt="Screenshot 2025-08-16 at 6 33 07 PM" src="https://github.com/user-attachments/assets/25e6be60-a0a5-4091-a966-0312f7d6d280" />
+
 ## For Testing
 For convenience, this repository contains a copy of Frontends for testing use with the swarm blossom relay, bouquet and sakura. They are early prototypes so beware when syncing, there might be issues. Bouquet is good for bulk syncing, Sakura is good for individual file mirroring.
 
@@ -30,6 +34,14 @@ Buggy Notes:
 Live instances at:
 - https://sakura-beta-ochre.vercel.app/
 - https://bouquet.slidestr.net/
+
+  
+Mirror files
+https://github.com/user-attachments/assets/5a0847d3-49f1-406a-bea2-9487c5b37318
+
+Upload
+https://github.com/user-attachments/assets/89e400e8-7816-4739-9690-ddc28135b5a6
+
 
 
 ## Table of Contents
