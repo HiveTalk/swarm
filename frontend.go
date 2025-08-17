@@ -20,14 +20,14 @@ const frontPageTemplate = `<!DOCTYPE html>
     <meta property="og:type" content="website">
     <meta property="og:title" content="{{.RelayName}} - Nostr Relay & Blossom Server">
     <meta property="og:description" content="{{.RelayDescription}} - Team-based Nostr relay with Blossom file storage">
-    <meta property="og:image" content="https://{{.TeamDomain}}/public/TeamHive.png">
+    <meta property="og:image" content="https://swarm.hivetalk.org/public/TeamHive.png">
     <meta property="og:url" content="https://{{.TeamDomain}}">
     
     <!-- Twitter Card Meta Tags -->
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="{{.RelayName}} - Nostr Relay & Blossom Server">
     <meta name="twitter:description" content="{{.RelayDescription}} - Team-based Nostr relay with Blossom file storage">
-    <meta name="twitter:image" content="https://{{.TeamDomain}}/public/TeamHive.png">
+    <meta name="twitter:image" content="https://swarm.hivetalk.org/public/TeamHive.png">
     
     <style>
         * {
