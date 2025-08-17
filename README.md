@@ -21,9 +21,9 @@ Additional features we added for production use:
 <img width="1085" height="681" alt="Screenshot 2025-08-16 at 6 33 07 PM" src="https://github.com/user-attachments/assets/25e6be60-a0a5-4091-a966-0312f7d6d280" />
 
 ## For Testing
-For convenience, this repository contains a copy of Frontends for testing use with the swarm blossom relay, bouquet and sakura. They are early prototypes so beware when syncing, there might be issues. Bouquet is good for bulk syncing, Sakura is good for individual file mirroring.
+For convenience, this repository contains a copy of frontends for testing with the swarm blossom relay, these two are called bouquet and sakura and a copy reside in the clients directory. Both have been modified to fix issues as of 15 AUG 2025. They are early prototypes and not actively maintained upstream, so beware when syncing, there might be issues. Bouquet is good for bulk syncing, Sakura is good for individual file mirroring.
 
-Buggy Notes:
+Buggy Client Notes:
 - Sakura syncs images well but videos might sync to type application/octet-stream and then they are binaries, will need to fix this.
 - Sakura takes a really long time to login, be patient
 - Fixed some syncing issue bugs with Sakura, as well as refresh page, so it will not logout user.
