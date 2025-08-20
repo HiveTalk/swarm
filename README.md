@@ -39,11 +39,21 @@ Live instances at:
 - https://bouquet.slidestr.net/
 
   
-Mirror files
-https://github.com/user-attachments/assets/5a0847d3-49f1-406a-bea2-9487c5b37318
+## Videos
 
-Upload
-https://github.com/user-attachments/assets/89e400e8-7816-4739-9690-ddc28135b5a6
+How to Mirror files
+[Watch the video](https://github.com/user-attachments/assets/5a0847d3-49f1-406a-bea2-9487c5b37318)
+
+
+<video width="320" height="240" controls>
+  <source src="https://github.com/user-attachments/assets/5a0847d3-49f1-406a-bea2-9487c5b37318" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
+How to Upload
+[Watch the video](https://github.com/user-attachments/assets/89e400e8-7816-4739-9690-ddc28135b5a6)
+
+
 
 
 
