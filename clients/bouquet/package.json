@@ -1,0 +1,59 @@
+{
+  "name": "bouquet-blob-manager",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "build:integration": "tsc && vite build && echo '✅ Bouquet built for Go integration at /bouquet/'",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview",
+    "format": "prettier -w src/",
+    "analyze": "vite-bundle-visualizer"
+  },
+  "dependencies": {
+    "@catamphetamine/id3js": "^1.0.2",
+    "@heroicons/react": "^2.2.0",
+    "@noble/hashes": "^1.8.0",
+    "@nostr-dev-kit/ndk": "^2.14.35",
+    "@nostr-dev-kit/ndk-cache-dexie": "^2.6.36",
+    "@tanstack/react-query": "^5.90.2",
+    "@tanstack/react-query-devtools": "^5.90.2",
+    "add": "^2.0.6",
+    "axios": "^1.12.2",
+    "blossom-client-sdk": "^2.1.1",
+    "blurhash": "^2.0.5",
+    "dayjs": "^1.11.18",
+    "lodash": "^4.17.21",
+    "nostr-tools": "^2.17.0",
+    "p-limit": "^6.2.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-pdf": "^9.2.1",
+    "react-router-dom": "^7.9.2"
+  },
+  "devDependencies": {
+    "@tanstack/eslint-plugin-query": "^5.90.1",
+    "@types/lodash": "^4.17.20",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "@typescript-eslint/eslint-plugin": "^8.44.1",
+    "@typescript-eslint/parser": "^8.44.1",
+    "@vitejs/plugin-react-swc": "^3.11.0",
+    "autoprefixer": "^10.4.21",
+    "daisyui": "latest",
+    "eslint": "^9.36.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.22",
+    "postcss": "^8.5.6",
+    "prettier": "^3.6.2",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.9.2",
+    "vite": "^6.3.6",
+    "vite-bundle-visualizer": "^1.2.1"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "4.29.1"
+  }
+}
