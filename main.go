@@ -105,9 +105,25 @@ func main() {
 	// Setup front page handler
 	setupFrontPageHandler(relay, config)
 
-	// Add handler for TeamHive.png
-	relay.Router().HandleFunc("/public/TeamHive.png", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "./public/TeamHive.png")
+	// Add handler for all public assets
+	relay.Router().HandleFunc("/public/", func(w http.ResponseWriter, r *http.Request) {
+		// Get the requested file path (remove /public/ prefix)
+		requestedPath := strings.TrimPrefix(r.URL.Path, "/public/")
+
+		// Prevent directory traversal attacks
+		if strings.Contains(requestedPath, "..") {
+			http.Error(w, "Invalid path", http.StatusBadRequest)
+			return
+		}
+
+		// Serve the file from public directory
+		filePath := "./public/" + requestedPath
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			http.NotFound(w, r)
+			return
+		}
+
+		http.ServeFile(w, r, filePath)
 	})
 
 	// Serve Bouquet client static files
