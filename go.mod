@@ -1,4 +1,4 @@
-module github.com/bitvora/team-relay
+module github.com/hivetalk/swarm
 
 go 1.23.1
 
