@@ -345,7 +345,7 @@ const frontPageTemplate = `<!DOCTYPE html>
             <p>
                 Powered by <a href="https://khatru.nostr.technology/" target="_blank">Khatru</a> 
                 {{if .BlossomEnabled}}& <a href="https://khatru.nostr.technology/core/blossom" target="_blank">Blossom</a>{{end}}
-                | Built for the Nostr ecosystem
+                | Source Code <a href="https://github.com/HiveTalk/swarm" target="_blank">on GitHub</a>
             </p>
         </div>
     </div>

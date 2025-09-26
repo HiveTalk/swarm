@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "build:integration": "tsc && vite build && echo '✅ Bouquet built for Go integration at /bouquet/'",
+    "build:integration": "NODE_OPTIONS='--max-old-space-size=512' tsc && NODE_OPTIONS='--max-old-space-size=768' vite build && echo '✅ Bouquet built for Go integration at /bouquet/'",
+    "build:low-memory": "NODE_OPTIONS='--max-old-space-size=384 --gc-interval=100' tsc && NODE_OPTIONS='--max-old-space-size=512 --gc-interval=100' vite build --mode production && echo '✅ Low-memory build completed'",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "format": "prettier -w src/",

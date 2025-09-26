@@ -7,6 +7,44 @@ export default defineConfig({
   build: {
     outDir: '../../bouquet-dist', // Build to root directory for Go to serve
     emptyOutDir: true,
+    // Optimize for low memory systems
+    chunkSizeWarningLimit: 500,
+    minify: 'terser', // More memory efficient than esbuild for large bundles
+    terserOptions: {
+      compress: {
+        drop_console: true, // Remove console.logs to reduce size
+        drop_debugger: true,
+      }
+    },
+    rollupOptions: {
+      // Reduce memory usage during build
+      maxParallelFileOps: 2, // Limit concurrent operations
+      output: {
+        // More aggressive chunking for memory efficiency
+        manualChunks: (id) => {
+          // Split node_modules into smaller chunks
+          if (id.includes('node_modules')) {
+            if (id.includes('react') || id.includes('react-dom')) {
+              return 'react-vendor';
+            }
+            if (id.includes('@nostr-dev-kit') || id.includes('nostr-tools')) {
+              return 'nostr-vendor';
+            }
+            if (id.includes('@heroicons') || id.includes('daisyui')) {
+              return 'ui-vendor';
+            }
+            if (id.includes('@tanstack')) {
+              return 'query-vendor';
+            }
+            // Split other large libraries
+            if (id.includes('lodash') || id.includes('dayjs')) {
+              return 'utils-vendor';
+            }
+            return 'vendor'; // Everything else
+          }
+        }
+      }
+    }
   },
   base: '/bouquet/', // Serve from /bouquet/ path
 })

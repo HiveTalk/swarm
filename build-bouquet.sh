@@ -6,6 +6,10 @@ set -e
 
 echo "🌺 Building Bouquet client for integration with Go backend..."
 
+# Check available memory
+AVAILABLE_MEM=$(free -m 2>/dev/null | awk 'NR==2{printf "%.0f", $7}' || echo "unknown")
+echo "💾 Available memory: ${AVAILABLE_MEM}MB"
+
 # Navigate to bouquet directory
 cd clients/bouquet
 
@@ -15,9 +19,14 @@ if [ ! -d "node_modules" ]; then
     pnpm install
 fi
 
-# Build the client
-echo "🔨 Building Bouquet client..."
-pnpm run build:integration
+# Choose build strategy based on available memory
+if [[ "$AVAILABLE_MEM" != "unknown" && "$AVAILABLE_MEM" -lt 1000 ]]; then
+    echo "🔨 Building with low-memory optimizations..."
+    pnpm run build:low-memory
+else
+    echo "🔨 Building Bouquet client..."
+    pnpm run build:integration
+fi
 
 # Check if build was successful
 if [ -d "../../bouquet-dist" ]; then
