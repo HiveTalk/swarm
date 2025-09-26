@@ -12,33 +12,33 @@ export default defineConfig({
     minify: false, // Disable minification to save memory
     target: 'es2020',
     sourcemap: false, // Disable sourcemaps to save memory
+    reportCompressedSize: false, // Skip gzip size reporting to save memory
     rollupOptions: {
       // Minimize memory usage
       maxParallelFileOps: 1, // No parallel processing
+      cache: false, // Disable caching to save memory
       output: {
-        // Extremely aggressive chunking
+        // Extremely aggressive chunking - split everything
         manualChunks: (id) => {
           if (id.includes('node_modules')) {
-            // Split every major dependency into its own chunk
-            if (id.includes('react/')) return 'react';
-            if (id.includes('react-dom/')) return 'react-dom';
-            if (id.includes('@nostr-dev-kit/ndk')) return 'ndk';
-            if (id.includes('nostr-tools')) return 'nostr-tools';
-            if (id.includes('@heroicons')) return 'heroicons';
-            if (id.includes('@tanstack/react-query')) return 'react-query';
-            if (id.includes('blossom-client-sdk')) return 'blossom';
-            if (id.includes('lodash')) return 'lodash';
-            if (id.includes('dayjs')) return 'dayjs';
-            if (id.includes('axios')) return 'axios';
-            // Split remaining vendor code into smaller chunks
-            const parts = id.split('node_modules/')[1]?.split('/');
-            if (parts && parts[0]) {
-              return `vendor-${parts[0].replace(/[^a-zA-Z0-9]/g, '')}`;
+            // Create very small chunks for each package
+            const match = id.match(/node_modules\/([^\/]+)/);
+            if (match) {
+              const packageName = match[1].replace(/[^a-zA-Z0-9]/g, '');
+              // Group some tiny packages together
+              if (packageName.length < 4) return 'tiny-vendor';
+              return `pkg-${packageName}`;
             }
             return 'vendor-misc';
           }
-          // Split app code by directory
-          if (id.includes('/components/')) return 'components';
+          // Split app code into very small chunks
+          if (id.includes('/components/')) {
+            const componentMatch = id.match(/\/components\/([^\/]+)/);
+            if (componentMatch) {
+              return `comp-${componentMatch[1].replace(/[^a-zA-Z0-9]/g, '')}`;
+            }
+            return 'components';
+          }
           if (id.includes('/utils/')) return 'utils';
           if (id.includes('/pages/')) return 'pages';
         }

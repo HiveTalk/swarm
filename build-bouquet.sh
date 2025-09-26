@@ -20,22 +20,8 @@ if [ ! -d "node_modules" ]; then
 fi
 
 # Choose build strategy based on available memory
-if [[ "$AVAILABLE_MEM" != "unknown" && "$AVAILABLE_MEM" -lt 400 ]]; then
-    echo "🔨 Building with extreme memory constraints..."
-    echo "⚠️  Only ${AVAILABLE_MEM}MB available - this will be very slow"
-    echo "💡 Consider enabling swap: sudo fallocate -l 1G /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile"
-    pnpm run build:extreme
-elif [[ "$AVAILABLE_MEM" != "unknown" && "$AVAILABLE_MEM" -lt 600 ]]; then
-    echo "🔨 Building with ultra-low memory optimizations..."
-    echo "⚠️  This may take longer but uses minimal memory"
-    pnpm run build:ultra-low
-elif [[ "$AVAILABLE_MEM" != "unknown" && "$AVAILABLE_MEM" -lt 1000 ]]; then
-    echo "🔨 Building with low-memory optimizations..."
-    pnpm run build:low-memory
-else
-    echo "🔨 Building Bouquet client..."
-    pnpm run build:integration
-fi
+echo "🔨 Building Bouquet client..."
+pnpm run build:integration
 
 # Check if build was successful
 if [ -d "../../bouquet-dist" ]; then
