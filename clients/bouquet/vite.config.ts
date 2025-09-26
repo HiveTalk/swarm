@@ -9,13 +9,8 @@ export default defineConfig({
     emptyOutDir: true,
     // Optimize for low memory systems
     chunkSizeWarningLimit: 500,
-    minify: 'terser', // More memory efficient than esbuild for large bundles
-    terserOptions: {
-      compress: {
-        drop_console: true, // Remove console.logs to reduce size
-        drop_debugger: true,
-      }
-    },
+    minify: 'esbuild', // Use esbuild (default, no extra dependency needed)
+    target: 'es2020', // Optimize for modern browsers to reduce bundle size
     rollupOptions: {
       // Reduce memory usage during build
       maxParallelFileOps: 2, // Limit concurrent operations

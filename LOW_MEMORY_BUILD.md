@@ -35,11 +35,14 @@ sudo swapon /swapfile
 
 #### 3. Build Environment Variables
 ```bash
-# Force garbage collection more frequently
-export NODE_OPTIONS="--max-old-space-size=384 --gc-interval=50"
+# Set memory limits (gc-interval not supported in NODE_OPTIONS on some systems)
+export NODE_OPTIONS="--max-old-space-size=384"
 
 # Reduce npm/pnpm cache
 export npm_config_cache=/tmp/npm-cache
+
+# Alternative: Use node directly with gc flags (if needed)
+# node --max-old-space-size=384 --gc-interval=100 ./node_modules/.bin/tsc
 ```
 
 #### 4. Alternative: Use GitHub Actions
