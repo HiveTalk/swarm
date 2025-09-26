@@ -17,7 +17,7 @@ fi
 
 # Build the client
 echo "🔨 Building Bouquet client..."
-pnpm run build
+pnpm run build:integration
 
 # Check if build was successful
 if [ -d "../../bouquet-dist" ]; then
