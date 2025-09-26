@@ -212,7 +212,31 @@ const frontPageTemplate = `<!DOCTYPE html>
             </div>
             <p>{{.RelayDescription}}</p>
         </div>
-        
+
+                {{if .BlossomEnabled}}
+        <div class="card">
+            <h2>🌺 Bouquet Client</h2>
+
+            <div class="endpoint">
+                <div class="endpoint-title">
+                    <span class="method get">WEB APP</span>
+                    <span class="path">/bouquet/</span>
+                </div>
+                <div class="description">
+                    Modern web interface for managing your blobs. Upload files, organize content,
+                    and publish to Nostr with rich metadata support including audio, video, and images.
+                </div>
+            </div>
+
+            <div style="margin-top: 1rem; text-align: center;">
+                <a href="/bouquet/" class="btn" style="background: #be185d; color: white; text-decoration: none; padding: 0.75rem 1.5rem; border-radius: 8px; display: inline-block; font-weight: bold;">
+                    🚀 Launch Bouquet Client
+                </a>
+            </div>
+        </div>
+        {{end}}
+
+
         <div class="card">
             <h2>🔗 Nostr Relay Endpoints</h2>
             
@@ -286,30 +310,6 @@ const frontPageTemplate = `<!DOCTYPE html>
             </div>
         </div>
         {{end}}
-
-        {{if .BlossomEnabled}}
-        <div class="card">
-            <h2>🌺 Bouquet Client</h2>
-
-            <div class="endpoint">
-                <div class="endpoint-title">
-                    <span class="method get">WEB APP</span>
-                    <span class="path">/bouquet/</span>
-                </div>
-                <div class="description">
-                    Modern web interface for managing your blobs. Upload files, organize content,
-                    and publish to Nostr with rich metadata support including audio, video, and images.
-                </div>
-            </div>
-
-            <div style="margin-top: 1rem; text-align: center;">
-                <a href="/bouquet/" class="btn" style="background: #be185d; color: white; text-decoration: none; padding: 0.75rem 1.5rem; border-radius: 8px; display: inline-block; font-weight: bold;">
-                    🚀 Launch Bouquet Client
-                </a>
-            </div>
-        </div>
-        {{end}}
-
         
         <div class="card">
             <h2>📊 Server Status</h2>
