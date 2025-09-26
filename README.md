@@ -16,10 +16,12 @@ Additional features we added for production use:
    - added front page with relay and blossom information
    - added Bouquet integration, to enable media upload and syncing with other relays.
 
-
 <img width="1075" height="682" alt="Screenshot 2025-08-16 at 6 32 59 PM" src="https://github.com/user-attachments/assets/30ac25d6-658e-411d-a656-317e51053d0e" />
 
-<img width="1085" height="681" alt="Screenshot 2025-08-16 at 6 33 07 PM" src="https://github.com/user-attachments/assets/25e6be60-a0a5-4091-a966-0312f7d6d280" />
+
+https://github.com/user-attachments/assets/0e2920d1-970f-4d5a-8edd-3211685bf1a8
+
+
 
 ## Table of Contents
 
