@@ -1,6 +1,6 @@
 # Swarm: Nostr Team Relay Software
 
-This is a fork of the bitvora [team-relay](https://github.com/bitvora/team-relay) with modifications for Swarm.hivetalk.org This relay software specializes in providing a Nostr relay to a team.  This guide will help you set up and run the software on a Linux machine.
+This relay software specializes in providing a Nostr relay to a team.  This is a fork of the bitvora [team-relay](https://github.com/bitvora/team-relay) with modifications for Swarm.hivetalk.org 
 
 In the .env file, the team domain is used to reject non team members, only members in nostr.json are allowed for the specified team domain.
 
@@ -14,6 +14,7 @@ Additional features we added for production use:
 - Relay Kinds - add support to limit kinds allowed, kinds specified in .env file
 - Frontend
    - added front page with relay and blossom information
+   - added Bouquet integration, to enable media upload on site
 
 
 <img width="1075" height="682" alt="Screenshot 2025-08-16 at 6 32 59 PM" src="https://github.com/user-attachments/assets/30ac25d6-658e-411d-a656-317e51053d0e" />
