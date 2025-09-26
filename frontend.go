@@ -362,7 +362,7 @@ func setupFrontPageHandler(relay *khatru.Relay, config Config) {
 			TeamDomain:       config.TeamDomain,
 			BlossomEnabled:   config.BlossomEnabled,
 			MaxUploadSizeMB:  config.MaxUploadSizeMB,
-			WebSocketURL:     "wss://" + *config.BlossomURL,
+			WebSocketURL:     *config.WebSocketURL,
 			WellKnownURL:     "https://" + config.TeamDomain + "/.well-known/nostr.json",
 		}
 

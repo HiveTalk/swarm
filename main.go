@@ -40,6 +40,7 @@ type Config struct {
 	BlossomEnabled   bool
 	BlossomPath      *string
 	BlossomURL       *string
+	WebSocketURL     *string
 	AllowedKinds     []int
 	MaxUploadSizeMB  int
 }
@@ -435,6 +436,7 @@ func LoadConfig() Config {
 		BlossomEnabled:   getEnvBool("BLOSSOM_ENABLED"),
 		BlossomPath:      getEnvNullable("BLOSSOM_PATH"),
 		BlossomURL:       getEnvNullable("BLOSSOM_URL"),
+		WebSocketURL:     getEnvNullable("WEBSOCKET_URL"),
 		AllowedKinds:     parseAllowedKinds(getEnvNullable("ALLOWED_KINDS")),
 		MaxUploadSizeMB:  getEnvIntWithDefault("MAX_UPLOAD_SIZE_MB", 200),
 	}
