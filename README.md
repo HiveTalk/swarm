@@ -53,7 +53,7 @@ https://github.com/user-attachments/assets/0e2920d1-970f-4d5a-8edd-3211685bf1a8
     DB_ENGINE="lmdb" # lmdb, badger, postgres
     DB_PATH="db/" # only needed for lmdb, badger
 
-   # only needed for postgres
+    # only needed for postgres
     POSTGRES_USER=swarm
     POSTGRES_PASSWORD=password
     POSTGRES_DB=relay
