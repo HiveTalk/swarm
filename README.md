@@ -121,6 +121,52 @@ sudo apt-get install -y liblmdb-dev build-essential
 
 More details about Bouquet integration can be found in the [BOUQUET_INTEGRATION.md](BOUQUET_INTEGRATION.md) file.
 
+## Running Docker
+
+### Build the image
+
+From the repo root:
+
+```bash
+docker build -t hivetalk/swarm .
+```
+
+### Run with local .env
+
+Make sure you have a `.env` file in the project root (see [Setting Environment Variables](#setting-environment-variables)), then run:
+
+```bash
+docker run --rm \
+  --name swarm-relay \
+  -p 3334:3334 \
+  --env-file .env \
+  hivetalk/swarm
+```
+
+If you change `RELAY_PORT` in `.env`, update the `-p` mapping accordingly (e.g. `-p 7447:7447`).
+
+### Run with Postgres via docker-compose
+
+This repo includes a minimal `docker-compose.yml` for Postgres only. Example flow:
+
+```bash
+# 1. Start Postgres (uses .env for credentials/ports)
+docker compose up -d postgres
+
+# 2. Build the Swarm image
+docker build -t hivetalk/swarm .
+
+# 3. Run Swarm, pointing DB_* env vars at the postgres service
+docker run --rm \
+  --name swarm-relay \
+  -p 3334:3334 \
+  --env-file .env \
+  --add-host=host.docker.internal:host-gateway \
+  hivetalk/swarm
+```
+
+You can also create your own `docker-compose` service that uses this image and the same `.env` file.
+
 ## Running the Application as a Service
 
 1. Create a systemd service file:
