@@ -26,25 +26,27 @@ import (
 )
 
 type Config struct {
-	RelayName        string
-	RelayPubkey      string
-	RelayDescription string
-	DBEngine         *string
-	DBPath           *string
-	PostgresUser     *string
-	PostgresPassword *string
-	PostgresDB       *string
-	PostgresHost     *string
-	PostgresPort     *string
-	TeamDomain       string
-	NPUBDomain       string
-	BlossomEnabled   bool
-	BlossomPath      *string
-	BlossomURL       *string
-	WebSocketURL     *string
-	AllowedKinds     []int
-	MaxUploadSizeMB  int
-	RelayPort        string
+	RelayName          string
+	RelayPubkey        string
+	RelayDescription   string
+	DBEngine           *string
+	DBPath             *string
+	PostgresUser       *string
+	PostgresPassword   *string
+	PostgresDB         *string
+	PostgresHost       *string
+	PostgresPort       *string
+	TeamDomain         string
+	NPUBDomain         string
+	BlossomEnabled     bool
+	BlossomPath        *string
+	BlossomURL         *string
+	WebSocketURL       *string
+	AllowedKinds       []int
+	TrustedClientName  string
+	TrustedClientKinds []int
+	MaxUploadSizeMB    int
+	RelayPort          string
 }
 
 type NostrData struct {
@@ -75,6 +77,27 @@ func main() {
 	}()
 
 	relay.RejectEvent = append(relay.RejectEvent, func(ctx context.Context, event *nostr.Event) (reject bool, msg string) {
+		// Check for trusted client exception: allow specific kinds from a specific client
+		trustedClientException := false
+		if config.TrustedClientName != "" && len(config.TrustedClientKinds) > 0 {
+			for _, tag := range event.Tags {
+				if len(tag) >= 2 && tag[0] == "client" && tag[1] == config.TrustedClientName {
+					for _, kc := range config.TrustedClientKinds {
+						if event.Kind == kc {
+							trustedClientException = true
+							break
+						}
+					}
+					if trustedClientException {
+						break
+					}
+				}
+			}
+		}
+		if trustedClientException {
+			return false, "" // allow event from trusted client for configured kinds
+		}
+
 		// Check if user is part of the team
 		isTeamMember := false
 		for _, pubkey := range data.Names {
@@ -443,25 +466,27 @@ func LoadConfig() Config {
 	}
 
 	config = Config{
-		RelayName:        getEnv("RELAY_NAME"),
-		RelayPubkey:      getEnv("RELAY_PUBKEY"),
-		RelayDescription: getEnv("RELAY_DESCRIPTION"),
-		DBEngine:         getEnvNullable("DB_ENGINE"),
-		DBPath:           getEnvNullable("DB_PATH"),
-		PostgresUser:     getEnvNullable("POSTGRES_USER"),
-		PostgresPassword: getEnvNullable("POSTGRES_PASSWORD"),
-		PostgresDB:       getEnvNullable("POSTGRES_DB"),
-		PostgresHost:     getEnvNullable("POSTGRES_HOST"),
-		PostgresPort:     getEnvNullable("POSTGRES_PORT"),
-		TeamDomain:       getEnv("TEAM_DOMAIN"),
-		NPUBDomain:       getEnv("NPUB_DOMAIN"),
-		BlossomEnabled:   getEnvBool("BLOSSOM_ENABLED"),
-		BlossomPath:      getEnvNullable("BLOSSOM_PATH"),
-		BlossomURL:       getEnvNullable("BLOSSOM_URL"),
-		WebSocketURL:     getEnvNullable("WEBSOCKET_URL"),
-		AllowedKinds:     parseAllowedKinds(getEnvNullable("ALLOWED_KINDS")),
-		MaxUploadSizeMB:  getEnvIntWithDefault("MAX_UPLOAD_SIZE_MB", 200),
-		RelayPort:        getEnvWithDefault("RELAY_PORT", "3334"),
+		RelayName:          getEnv("RELAY_NAME"),
+		RelayPubkey:        getEnv("RELAY_PUBKEY"),
+		RelayDescription:   getEnv("RELAY_DESCRIPTION"),
+		DBEngine:           getEnvNullable("DB_ENGINE"),
+		DBPath:             getEnvNullable("DB_PATH"),
+		PostgresUser:       getEnvNullable("POSTGRES_USER"),
+		PostgresPassword:   getEnvNullable("POSTGRES_PASSWORD"),
+		PostgresDB:         getEnvNullable("POSTGRES_DB"),
+		PostgresHost:       getEnvNullable("POSTGRES_HOST"),
+		PostgresPort:       getEnvNullable("POSTGRES_PORT"),
+		TeamDomain:         getEnv("TEAM_DOMAIN"),
+		NPUBDomain:         getEnv("NPUB_DOMAIN"),
+		BlossomEnabled:     getEnvBool("BLOSSOM_ENABLED"),
+		BlossomPath:        getEnvNullable("BLOSSOM_PATH"),
+		BlossomURL:         getEnvNullable("BLOSSOM_URL"),
+		WebSocketURL:       getEnvNullable("WEBSOCKET_URL"),
+		AllowedKinds:       parseAllowedKinds(getEnvNullable("ALLOWED_KINDS")),
+		TrustedClientName:  getEnvWithDefault("TRUSTED_CLIENT_NAME", ""),
+		TrustedClientKinds: parseAllowedKinds(getEnvNullable("TRUSTED_CLIENT_KINDS")),
+		MaxUploadSizeMB:    getEnvIntWithDefault("MAX_UPLOAD_SIZE_MB", 200),
+		RelayPort:          getEnvWithDefault("RELAY_PORT", "3334"),
 	}
 
 	relay.Info.Name = config.RelayName
