@@ -37,12 +37,14 @@ type Config struct {
 	PostgresHost     *string
 	PostgresPort     *string
 	TeamDomain       string
+	NPUBDomain       string
 	BlossomEnabled   bool
 	BlossomPath      *string
 	BlossomURL       *string
 	WebSocketURL     *string
 	AllowedKinds     []int
 	MaxUploadSizeMB  int
+	RelayPort        string
 }
 
 type NostrData struct {
@@ -63,12 +65,12 @@ func main() {
 	relay.StoreEvent = append(relay.StoreEvent, db.SaveEvent)
 	relay.QueryEvents = append(relay.QueryEvents, db.QueryEvents)
 
-	fetchNostrData(config.TeamDomain)
+	fetchNostrData(config.NPUBDomain)
 
 	go func() {
 		for {
 			time.Sleep(1 * time.Hour)
-			fetchNostrData(config.TeamDomain)
+			fetchNostrData(config.NPUBDomain)
 		}
 	}()
 
@@ -132,7 +134,7 @@ func main() {
 	if !config.BlossomEnabled {
 		// Configure HTTP server with timeouts suitable for large file uploads
 		server := &http.Server{
-			Addr:              ":3334",
+			Addr:              ":" + config.RelayPort,
 			Handler:           relay,
 			ReadTimeout:       15 * time.Minute, // Increased to 15 minutes for very large files
 			WriteTimeout:      15 * time.Minute, // Increased to 15 minutes
@@ -141,7 +143,7 @@ func main() {
 			MaxHeaderBytes:    1 << 20,          // 1MB max header size
 		}
 
-		fmt.Println("running on :3334 with extended timeouts for large uploads")
+		fmt.Println("running on :" + config.RelayPort + " with extended timeouts for large uploads")
 		server.ListenAndServe()
 		return
 	}
@@ -392,7 +394,7 @@ func main() {
 
 	// Configure HTTP server with timeouts suitable for large file uploads
 	server := &http.Server{
-		Addr:              ":3334",
+		Addr:              ":" + config.RelayPort,
 		Handler:           relay,
 		ReadTimeout:       15 * time.Minute, // Increased to 15 minutes for very large files
 		WriteTimeout:      15 * time.Minute, // Increased to 15 minutes
@@ -401,7 +403,7 @@ func main() {
 		MaxHeaderBytes:    1 << 20,          // 1MB max header size
 	}
 
-	fmt.Println("running on :3334 with extended timeouts for large uploads")
+	fmt.Println("running on :" + config.RelayPort + " with extended timeouts for large uploads")
 	server.ListenAndServe()
 }
 
@@ -452,12 +454,14 @@ func LoadConfig() Config {
 		PostgresHost:     getEnvNullable("POSTGRES_HOST"),
 		PostgresPort:     getEnvNullable("POSTGRES_PORT"),
 		TeamDomain:       getEnv("TEAM_DOMAIN"),
+		NPUBDomain:       getEnv("NPUB_DOMAIN"),
 		BlossomEnabled:   getEnvBool("BLOSSOM_ENABLED"),
 		BlossomPath:      getEnvNullable("BLOSSOM_PATH"),
 		BlossomURL:       getEnvNullable("BLOSSOM_URL"),
 		WebSocketURL:     getEnvNullable("WEBSOCKET_URL"),
 		AllowedKinds:     parseAllowedKinds(getEnvNullable("ALLOWED_KINDS")),
 		MaxUploadSizeMB:  getEnvIntWithDefault("MAX_UPLOAD_SIZE_MB", 200),
+		RelayPort:        getEnvWithDefault("RELAY_PORT", "3334"),
 	}
 
 	relay.Info.Name = config.RelayName
@@ -520,6 +524,14 @@ func getEnvIntWithDefault(key string, defaultValue int) int {
 		return defaultValue
 	}
 	return intValue
+}
+
+func getEnvWithDefault(key string, defaultValue string) string {
+	value, exists := os.LookupEnv(key)
+	if !exists || strings.TrimSpace(value) == "" {
+		return defaultValue
+	}
+	return value
 }
 
 func parseAllowedKinds(allowedKindsStr *string) []int {
