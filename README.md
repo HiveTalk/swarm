@@ -18,19 +18,16 @@ Additional features we added for production use:
 
 <img width="1075" height="682" alt="Screenshot 2025-08-16 at 6 32 59 PM" src="https://github.com/user-attachments/assets/30ac25d6-658e-411d-a656-317e51053d0e" />
 
-
 https://github.com/user-attachments/assets/0e2920d1-970f-4d5a-8edd-3211685bf1a8
-
-
 
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
 - [Setting Environment Variables](#setting-environment-variables)
-- [Running Docker](#running-docker)
-- [Installing Go](#installing-go)
 - [Compiling the Application](#compiling-the-application)
 - [Running the Application as a Service](#running-the-application-as-a-service)
+- [Running Docker](#running-docker)
+
 
 ## Prerequisites
 
@@ -45,26 +42,39 @@ https://github.com/user-attachments/assets/0e2920d1-970f-4d5a-8edd-3211685bf1a8
 2.  Add your environment variables to the `.env` file. For example:
 
     ```env
-
-    RELAY_NAME="Swarm"
-    RELAY_PUBKEY="8ad8f1f78c8e11966242e28a7ca15c936b23a999d5fb91bfe4e4472e2d6eaf55"
-    RELAY_DESCRIPTION="Swarm Team Relay"
-
-    DB_ENGINE="lmdb" # lmdb, badger, postgres
-    DB_PATH="db/" # only needed for lmdb, badger
-
-    # only needed for postgres
-    POSTGRES_USER=swarm
-    POSTGRES_PASSWORD=password
-    POSTGRES_DB=relay
-    POSTGRES_HOST=localhost
-    POSTGRES_PORT=5437
-
-    TEAM_DOMAIN="swarm.hivetalk.org"
-    BLOSSOM_ENABLED="true"
-    BLOSSOM_PATH="blossom/"
-    BLOSSOM_URL="http://localhost:3334"
-
+      RELAY_NAME="Swarm"
+      RELAY_PUBKEY="8ad8f1f78c8e11966242e28a7ca15c936b23a999d5fb91bfe4e4472e2d6eaf55"
+      RELAY_DESCRIPTION="Swarm Hivetalk Team Relay"
+      
+      DB_ENGINE="badger" # lmdb, badger, postgres (default: postgres)
+      DB_PATH="db/" # only required for badger and lmdb
+      
+      RELAY_PORT="3334"
+      
+      POSTGRES_USER=swarm
+      POSTGRES_PASSWORD=password
+      POSTGRES_DB=relay
+      POSTGRES_HOST=localhost
+      POSTGRES_PORT=5437
+      
+      TEAM_DOMAIN="swarm.hivetalk.org" # Domain where the relay / site is served
+      NPUB_DOMAIN="hivetalk.org" # Domain that hosts .well-known/nostr.json
+      
+      BLOSSOM_ENABLED="true"
+      BLOSSOM_PATH="blossom/"
+      BLOSSOM_URL="http://localhost:3334"
+      
+      WEBSOCKET_URL="wss://localhost:3334"
+      
+      # Relay Kind Filtering
+      # Leave blank to allow all kinds, or specify comma-separated list of allowed kinds
+      # Examples:
+      #   ALLOWED_KINDS="" (allow all kinds)
+      #   ALLOWED_KINDS="0,1,5,10002,30311" (only allow specific kinds)
+      ALLOWED_KINDS=""
+      
+      # Maximum file upload size in MB (default: 200)
+      MAX_UPLOAD_SIZE_MB=200
     ```
 
 ## Compiling the Application
