@@ -102,6 +102,13 @@ go build -o swarm
 ./swarm
 ```
 
+If any issues with building for lmdb on ubuntu:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y liblmdb-dev build-essential
+```
+
 More details about Bouquet integration can be found in the [BOUQUET_INTEGRATION.md](BOUQUET_INTEGRATION.md) file.
 
 ## Running the Application as a Service
