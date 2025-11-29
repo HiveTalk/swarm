@@ -43,6 +43,7 @@ type Config struct {
 	BlossomURL         *string
 	WebSocketURL       *string
 	AllowedKinds       []int
+	PublicAllowedKinds []int
 	TrustedClientName  string
 	TrustedClientKinds []int
 	MaxUploadSizeMB    int
@@ -98,6 +99,46 @@ func main() {
 			return false, "" // allow event from trusted client for configured kinds
 		}
 
+		// Check if this is a delete event (kind 5)
+		if event.Kind == 5 {
+			// Team members can delete any events
+			for _, pubkey := range data.Names {
+				if event.PubKey == pubkey {
+					return false, "" // allow team members to delete any events
+				}
+			}
+
+			// Public users can delete their own posts if they have "e" tags referencing events
+			// and the original event was posted via PUBLIC_ALLOWED_KINDS
+			if len(config.PublicAllowedKinds) > 0 {
+				// Check if the delete event has "e" tags (references to events being deleted)
+				hasEventRefs := false
+				for _, tag := range event.Tags {
+					if len(tag) >= 2 && tag[0] == "e" {
+						hasEventRefs = true
+						break
+					}
+				}
+
+				if hasEventRefs {
+					// Allow public users to delete (they can only delete their own events
+					// as the relay will verify ownership when processing the delete)
+					return false, "" // allow public users to delete their own events
+				}
+			}
+
+			return true, "only team members can delete events, or users can delete their own posts"
+		}
+
+		// Check if this is a public allowed kind (any pubkey can post these)
+		if len(config.PublicAllowedKinds) > 0 {
+			for _, publicKind := range config.PublicAllowedKinds {
+				if event.Kind == publicKind {
+					return false, "" // allow public posting for this kind
+				}
+			}
+		}
+
 		// Check if user is part of the team
 		isTeamMember := false
 		for _, pubkey := range data.Names {
@@ -110,7 +151,7 @@ func main() {
 			return true, "you are not part of the team"
 		}
 
-		// Check if event kind is allowed
+		// Check if event kind is allowed for team members
 		if len(config.AllowedKinds) > 0 {
 			isKindAllowed := false
 			for _, allowedKind := range config.AllowedKinds {
@@ -120,7 +161,7 @@ func main() {
 				}
 			}
 			if !isKindAllowed {
-				return true, fmt.Sprintf("event kind %d is not allowed", event.Kind)
+				return true, fmt.Sprintf("event kind %d is not allowed for team members", event.Kind)
 			}
 		}
 
@@ -483,6 +524,7 @@ func LoadConfig() Config {
 		BlossomURL:         getEnvNullable("BLOSSOM_URL"),
 		WebSocketURL:       getEnvNullable("WEBSOCKET_URL"),
 		AllowedKinds:       parseAllowedKinds(getEnvNullable("ALLOWED_KINDS")),
+		PublicAllowedKinds: parseAllowedKinds(getEnvNullable("PUBLIC_ALLOWED_KINDS")),
 		TrustedClientName:  getEnvWithDefault("TRUSTED_CLIENT_NAME", ""),
 		TrustedClientKinds: parseAllowedKinds(getEnvNullable("TRUSTED_CLIENT_KINDS")),
 		MaxUploadSizeMB:    getEnvIntWithDefault("MAX_UPLOAD_SIZE_MB", 200),
