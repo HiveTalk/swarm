@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fiatjaf/eventstore/badger"
@@ -69,6 +70,9 @@ func main() {
 	relay.QueryEvents = append(relay.QueryEvents, db.QueryEvents)
 
 	fetchNostrData(config.NPUBDomain)
+
+	// Apply spam protection policies
+	applySpamProtection(relay, config)
 
 	go func() {
 		for {
@@ -554,6 +558,117 @@ func LoadConfig() Config {
 	}
 
 	return config
+}
+
+// Rate limiting data structures
+type rateLimiter struct {
+	mu       sync.RWMutex
+	counters map[string][]time.Time
+	limit    int
+	window   time.Duration
+}
+
+func newRateLimiter(limit int, window time.Duration) *rateLimiter {
+	return &rateLimiter{
+		counters: make(map[string][]time.Time),
+		limit:    limit,
+		window:   window,
+	}
+}
+
+func (rl *rateLimiter) isAllowed(key string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-rl.window)
+
+	// Clean old entries
+	times := rl.counters[key]
+	var validTimes []time.Time
+	for _, t := range times {
+		if t.After(cutoff) {
+			validTimes = append(validTimes, t)
+		}
+	}
+
+	// Check if under limit
+	if len(validTimes) >= rl.limit {
+		return false
+	}
+
+	// Add current request
+	validTimes = append(validTimes, now)
+	rl.counters[key] = validTimes
+
+	return true
+}
+
+// Global rate limiters
+var (
+	pubkeyRateLimit = newRateLimiter(5, time.Minute)   // 5 events per minute per pubkey
+	ipRateLimit     = newRateLimiter(10, time.Minute)  // 10 events per minute per IP
+	connRateLimit   = newRateLimiter(2, time.Minute*2) // 2 connections per 2 minutes per IP
+	queryRateLimit  = newRateLimiter(30, time.Minute)  // 30 queries per minute per IP
+)
+
+// applySpamProtection applies rate limiting and spam protection policies
+func applySpamProtection(relay *khatru.Relay, config Config) {
+	// Rate limit events by pubkey (applies to all users)
+	relay.RejectEvent = append(relay.RejectEvent, func(ctx context.Context, event *nostr.Event) (reject bool, msg string) {
+		// Check if user is team member (more lenient limits)
+		isTeamMember := false
+		for _, pubkey := range data.Names {
+			if event.PubKey == pubkey {
+				isTeamMember = true
+				break
+			}
+		}
+
+		// Apply stricter rate limits to non-team members
+		if !isTeamMember {
+			if !pubkeyRateLimit.isAllowed(event.PubKey) {
+				return true, "rate-limited: too many events from this pubkey, slow down please"
+			}
+		}
+
+		return false, ""
+	})
+
+	// Rate limit events by IP
+	relay.RejectEvent = append(relay.RejectEvent, func(ctx context.Context, event *nostr.Event) (reject bool, msg string) {
+		ip := khatru.GetIP(ctx)
+		if ip != "" && !ipRateLimit.isAllowed(ip) {
+			return true, "rate-limited: too many events from this IP, slow down please"
+		}
+		return false, ""
+	})
+
+	// Rate limit connections
+	relay.RejectConnection = append(relay.RejectConnection, func(r *http.Request) bool {
+		ip := khatru.GetIPFromRequest(r)
+		return !connRateLimit.isAllowed(ip)
+	})
+
+	// Rate limit queries/filters
+	relay.RejectFilter = append(relay.RejectFilter, func(ctx context.Context, filter nostr.Filter) (reject bool, msg string) {
+		ip := khatru.GetIP(ctx)
+		if ip != "" && !queryRateLimit.isAllowed(ip) {
+			return true, "rate-limited: too many queries from this IP"
+		}
+		return false, ""
+	})
+
+	// Reject events with base64 media (common spam vector)
+	relay.RejectEvent = append(relay.RejectEvent, func(ctx context.Context, event *nostr.Event) (reject bool, msg string) {
+		if strings.Contains(event.Content, "data:image/") || strings.Contains(event.Content, "data:video/") {
+			return true, "rejected: base64 media not allowed"
+		}
+		return false, ""
+	})
+
+	log.Println("Applied spam protection policies with rate limiting")
+	log.Printf("Rate limits: %d events/min per pubkey, %d events/min per IP", pubkeyRateLimit.limit, ipRateLimit.limit)
 }
 
 func getEnv(key string) string {
