@@ -15,27 +15,27 @@ const frontPageTemplate = `<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.RelayName}} - Nostr Relay & Blossom Server</title>
-    
+
     <!-- Open Graph / Link Preview Meta Tags -->
     <meta property="og:type" content="website">
     <meta property="og:title" content="{{.RelayName}} - Nostr Relay & Blossom Server">
     <meta property="og:description" content="{{.RelayDescription}} - Team-based Nostr relay with Blossom file storage">
     <meta property="og:image" content="https://swarm.hivetalk.org/public/TeamHive.png">
     <meta property="og:url" content="https://{{.TeamDomain}}">
-    
+
     <!-- Twitter Card Meta Tags -->
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="{{.RelayName}} - Nostr Relay & Blossom Server">
     <meta name="twitter:description" content="{{.RelayDescription}} - Team-based Nostr relay with Blossom file storage">
     <meta name="twitter:image" content="https://swarm.hivetalk.org/public/TeamHive.png">
-    
+
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             line-height: 1.6;
@@ -43,43 +43,43 @@ const frontPageTemplate = `<!DOCTYPE html>
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
         }
-        
+
         .container {
             max-width: 1200px;
             margin: 0 auto;
             padding: 2rem;
         }
-        
+
         .header {
             text-align: center;
             color: white;
             margin-bottom: 3rem;
         }
-        
+
         .header-content {
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 1rem;
         }
-        
+
         .header-logo {
             width: 100px;
             height: 100px;
             object-fit: contain;
         }
-        
+
         .header h1 {
             font-size: 3rem;
             margin-bottom: 0.5rem;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
         }
-        
+
         .header p {
             font-size: 1.2rem;
             opacity: 0.9;
         }
-        
+
         .card {
             background: white;
             border-radius: 12px;
@@ -88,11 +88,11 @@ const frontPageTemplate = `<!DOCTYPE html>
             box-shadow: 0 10px 30px rgba(0,0,0,0.1);
             transition: transform 0.3s ease;
         }
-        
+
         .card:hover {
             transform: translateY(-5px);
         }
-        
+
         .card h2 {
             color: #4a5568;
             margin-bottom: 1rem;
@@ -100,7 +100,7 @@ const frontPageTemplate = `<!DOCTYPE html>
             border-bottom: 2px solid #e2e8f0;
             padding-bottom: 0.5rem;
         }
-        
+
         .endpoint {
             margin-bottom: 1.5rem;
             padding: 1rem;
@@ -108,13 +108,13 @@ const frontPageTemplate = `<!DOCTYPE html>
             border-radius: 8px;
             border-left: 4px solid #667eea;
         }
-        
+
         .endpoint-title {
             font-weight: bold;
             color: #2d3748;
             margin-bottom: 0.5rem;
         }
-        
+
         .method {
             display: inline-block;
             padding: 0.2rem 0.5rem;
@@ -123,12 +123,12 @@ const frontPageTemplate = `<!DOCTYPE html>
             font-weight: bold;
             margin-right: 0.5rem;
         }
-        
+
         .method.get { background: #48bb78; color: white; }
         .method.post { background: #ed8936; color: white; }
         .method.put { background: #4299e1; color: white; }
         .method.websocket { background: #805ad5; color: white; }
-        
+
         .path {
             font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
             background: #2d3748;
@@ -137,66 +137,66 @@ const frontPageTemplate = `<!DOCTYPE html>
             border-radius: 4px;
             font-size: 0.9rem;
         }
-        
+
         .description {
             color: #4a5568;
             margin-top: 0.5rem;
         }
-        
+
         .status-info {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 1rem;
             margin-top: 1rem;
         }
-        
+
         .status-item {
             background: #edf2f7;
             padding: 1rem;
             border-radius: 8px;
             text-align: center;
         }
-        
+
         .status-label {
             font-size: 0.8rem;
             color: #718096;
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
-        
+
         .status-value {
             font-size: 1.2rem;
             font-weight: bold;
             color: #2d3748;
             margin-top: 0.25rem;
         }
-        
+
         .footer {
             text-align: center;
             color: white;
             opacity: 0.8;
             margin-top: 3rem;
         }
-        
+
         .footer a {
             color: white;
             text-decoration: none;
             border-bottom: 1px solid rgba(255,255,255,0.3);
         }
-        
+
         .footer a:hover {
             border-bottom-color: white;
         }
-        
+
         @media (max-width: 768px) {
             .container {
                 padding: 1rem;
             }
-            
+
             .header h1 {
                 font-size: 2rem;
             }
-            
+
             .card {
                 padding: 1.5rem;
             }
@@ -226,12 +226,28 @@ const frontPageTemplate = `<!DOCTYPE html>
                     Modern web interface for managing your blobs. Upload files, organize content,
                     and publish to Nostr with rich metadata support including audio, video, and images.
                 </div>
+                <div style="margin-top: 1rem; text-align: center;">
+                    <a href="/bouquet/" target="_blank" class="btn" style="background: #be185d; color: white; text-decoration: none; padding: 0.75rem 1.5rem; border-radius: 8px; display: inline-block; font-weight: bold;">
+                        🚀 Launch Bouquet Client
+                    </a>
+                </div>
             </div>
 
-            <div style="margin-top: 1rem; text-align: center;">
-                <a href="/bouquet/" class="btn" style="background: #be185d; color: white; text-decoration: none; padding: 0.75rem 1.5rem; border-radius: 8px; display: inline-block; font-weight: bold;">
-                    🚀 Launch Bouquet Client
-                </a>
+            <h2>Curator</h2>
+            <div class="endpoint">
+                <div class="endpoint-title">
+                    <span class="method get">WEB APP</span>
+                    <span class="path">https://curator.hivetalk.org</span>
+                </div>
+                <div class="description">
+                    Simple interface to quickly lookup any kind on a relay.
+                    Login to switch relays, view json, post kind 1 and delete notes.
+                </div>
+                <div style="margin-top: 1rem; text-align: center;">
+                    <a href="https://curator.hivetalk.org" target="_blank" class="btn" style="background: #1844beff; color: white; text-decoration: none; padding: 0.75rem 1.5rem; border-radius: 8px; display: inline-block; font-weight: bold;">
+                        🚀 Launch Curator Client
+                    </a>
+                </div>
             </div>
         </div>
         {{end}}
@@ -239,7 +255,7 @@ const frontPageTemplate = `<!DOCTYPE html>
 
         <div class="card">
             <h2>🔗 Nostr Relay Endpoints</h2>
-            
+
             <div class="endpoint">
                 <div class="endpoint-title">
                     <span class="method websocket">WebSocket</span>
@@ -250,7 +266,7 @@ const frontPageTemplate = `<!DOCTYPE html>
                     Supports standard Nostr protocol (NIP-01) with team-based access control.
                 </div>
             </div>
-            
+
             <div class="endpoint">
                 <div class="endpoint-title">
                     <span class="method get">GET</span>
@@ -261,11 +277,11 @@ const frontPageTemplate = `<!DOCTYPE html>
                 </div>
             </div>
         </div>
-        
+
         {{if .BlossomEnabled}}
         <div class="card">
             <h2>🌸 Blossom Server Endpoints</h2>
-            
+
             <div class="endpoint">
                 <div class="endpoint-title">
                     <span class="method get">GET</span>
@@ -275,7 +291,7 @@ const frontPageTemplate = `<!DOCTYPE html>
                     Download a blob by its SHA256 hash. Returns the raw file content with appropriate MIME type.
                 </div>
             </div>
-            
+
             <div class="endpoint">
                 <div class="endpoint-title">
                     <span class="method put">PUT</span>
@@ -286,7 +302,7 @@ const frontPageTemplate = `<!DOCTYPE html>
                     Maximum file size: {{.MaxUploadSizeMB}}MB.
                 </div>
             </div>
-            
+
             <div class="endpoint">
                 <div class="endpoint-title">
                     <span class="method get">GET</span>
@@ -297,7 +313,7 @@ const frontPageTemplate = `<!DOCTYPE html>
                     Used for health checks and blob discovery.
                 </div>
             </div>
-            
+
             <div class="endpoint">
                 <div class="endpoint-title">
                     <span class="method put">PUT</span>
@@ -310,7 +326,7 @@ const frontPageTemplate = `<!DOCTYPE html>
             </div>
         </div>
         {{end}}
-        
+
         <div class="card">
             <h2>📊 Server Status</h2>
             <div class="status-info">
@@ -340,10 +356,10 @@ const frontPageTemplate = `<!DOCTYPE html>
                 {{end}}
             </div>
         </div>
-        
+
         <div class="footer">
             <p>
-                Powered by <a href="https://khatru.nostr.technology/" target="_blank">Khatru</a> 
+                Powered by <a href="https://khatru.nostr.technology/" target="_blank">Khatru</a>
                 {{if .BlossomEnabled}}& <a href="https://khatru.nostr.technology/core/blossom" target="_blank">Blossom</a>{{end}}
                 | Source Code <a href="https://github.com/HiveTalk/swarm" target="_blank">on GitHub</a>
             </p>
