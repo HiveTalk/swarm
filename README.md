@@ -5,16 +5,36 @@ This relay software provides a Nostr relay to a team.  This is a fork of the bit
 In the .env file, the team domain is used to reject non team members, only members in nostr.json are allowed for the specified team domain.
 
 Additional features we added for production use:
-- Blossom
-   - added read and write timeouts
-   - prevent slow header attacks, max header size
-   - max size upload
-   - added /mirror endpoint to allow for syncing content with other relays
-   - added /list endpoint to allow for listing content for a specific user
-- Relay Kinds - add support to limit kinds allowed, kinds specified in .env file
-- Frontend
-   - added front page with relay and blossom information
-   - added Bouquet integration, to enable media upload and syncing with other relays.
+- **Enhanced Access Control System**
+   - **Public Posting**: Configure `PUBLIC_ALLOWED_KINDS` to allow any pubkey to post specific event kinds (e.g., text notes, reactions)
+   - **Team Member Privileges**: `ALLOWED_KINDS` remains restricted to team members only
+   - **Hierarchical Access**: Trusted clients → Public users → Team members with escalating permissions
+   - **Delete Capabilities**: Public users can delete their own posts, team members can delete any events
+- **Rate Limiting & Spam Protection**
+   - **Pubkey Rate Limiting**: 5 events/minute for non-team members
+   - **IP Rate Limiting**: 10 events/minute per IP address
+   - **Connection Rate Limiting**: 2 connections per 2 minutes per IP
+   - **Team Member Exemption**: Team members bypass pubkey rate limits
+- **Trusted Client Support**
+   - Configure `TRUSTED_CLIENT_NAME` and `TRUSTED_CLIENT_KINDS` for special client access
+   - Events from trusted clients bypass normal restrictions for specified kinds
+- **Blossom Media Server**
+   - Added read and write timeouts
+   - Prevent slow header attacks, max header size
+   - Max size upload configuration
+   - Added `/mirror` endpoint to allow for syncing content with other relays
+   - Added `/list` endpoint to allow for listing content for a specific user
+- **Relay Kind Filtering**
+   - Support to limit kinds allowed, kinds specified in .env file
+   - Separate configuration for public vs team member allowed kinds
+- **Frontend Enhancements**
+   - Added front page with relay and blossom information
+   - Added Bouquet integration, to enable media upload and syncing with other relays
+   - Curator client integration for enhanced content management
+- **Docker Support**
+   - Full containerization support with Dockerfile
+   - Docker Compose integration for easy deployment
+   - Multi-architecture build support
 
 <img width="1075" height="682" alt="Screenshot 2025-08-16 at 6 32 59 PM" src="https://github.com/user-attachments/assets/30ac25d6-658e-411d-a656-317e51053d0e" />
 
@@ -23,6 +43,8 @@ https://github.com/user-attachments/assets/0e2920d1-970f-4d5a-8edd-3211685bf1a8
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
+- [Access Control System](#access-control-system)
+- [Rate Limiting & Security](#rate-limiting--security)
 - [Setting Environment Variables](#setting-environment-variables)
 - [Compiling the Application](#compiling-the-application)
 - [Running the Application as a Service](#running-the-application-as-a-service)
@@ -34,6 +56,45 @@ https://github.com/user-attachments/assets/0e2920d1-970f-4d5a-8edd-3211685bf1a8
 - A Linux-based operating system
 - Go installed on your system
 - A Webserver (like nginx) if blossom is enabled
+
+## Access Control System
+
+Swarm implements a hierarchical access control system with three levels of access:
+
+### 1. **Trusted Clients** (Highest Priority)
+- Configure via `TRUSTED_CLIENT_NAME` and `TRUSTED_CLIENT_KINDS`
+- Events from trusted clients (identified by `["client","<name>"]` tag) bypass normal restrictions
+- Useful for allowing specific applications to post certain event kinds regardless of pubkey
+
+### 2. **Public Users** (Medium Priority)
+- Configure via `PUBLIC_ALLOWED_KINDS` to specify which event kinds any pubkey can post
+- Can delete their own posts (kind 5 events)
+- Example: `PUBLIC_ALLOWED_KINDS="1,6,7"` allows any user to post text notes, reposts, and reactions
+
+### 3. **Team Members** (Full Access)
+- Configure via `ALLOWED_KINDS` for team-member-only event kinds
+- Team members (listed in nostr.json) have access to both `ALLOWED_KINDS` and `PUBLIC_ALLOWED_KINDS`
+- Can delete any events on the relay
+- Bypass all rate limiting restrictions
+
+## Rate Limiting & Security
+
+Swarm includes comprehensive rate limiting and spam protection:
+
+### **Pubkey Rate Limiting**
+- **5 events/minute** for non-team members
+- Team members are exempt from pubkey rate limits
+- Prevents spam from individual accounts
+
+### **IP Rate Limiting**
+- **10 events/minute** per IP address
+- **2 connections per 2 minutes** per IP
+- Prevents abuse from single IP addresses
+
+### **Team Member Exemptions**
+- Team members bypass pubkey rate limits
+- Ensures team operations are never throttled
+- Maintains relay performance for authorized users
 
 ## Setting Environment Variables
 
@@ -67,11 +128,21 @@ https://github.com/user-attachments/assets/0e2920d1-970f-4d5a-8edd-3211685bf1a8
       WEBSOCKET_URL="wss://localhost:3334"
       
       # Relay Kind Filtering
+      # ALLOWED_KINDS: Restricted to team members only
+      # PUBLIC_ALLOWED_KINDS: Any pubkey can post these kinds
       # Leave blank to allow all kinds, or specify comma-separated list of allowed kinds
       # Examples:
-      #   ALLOWED_KINDS="" (allow all kinds)
-      #   ALLOWED_KINDS="0,1,5,10002,30311" (only allow specific kinds)
+      #   ALLOWED_KINDS="" (allow all kinds for team members)
+      #   ALLOWED_KINDS="0,1,5,10002,30311" (only allow specific kinds for team members)
+      #   PUBLIC_ALLOWED_KINDS="1,6,7" (allow any pubkey to post text notes, reposts, reactions)
       ALLOWED_KINDS=""
+      PUBLIC_ALLOWED_KINDS=""
+      
+      # Trusted client override
+      # Events from this client (via ["client","<name>"] tag) are allowed for the
+      # configured kinds even if the pubkey is not in nostr.json
+      TRUSTED_CLIENT_NAME="The Lookup"
+      TRUSTED_CLIENT_KINDS="30017,31990"
       
       # Maximum file upload size in MB (default: 200)
       MAX_UPLOAD_SIZE_MB=200
