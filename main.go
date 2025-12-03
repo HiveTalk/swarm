@@ -68,6 +68,7 @@ func main() {
 
 	relay.StoreEvent = append(relay.StoreEvent, db.SaveEvent)
 	relay.QueryEvents = append(relay.QueryEvents, db.QueryEvents)
+	relay.DeleteEvent = append(relay.DeleteEvent, db.DeleteEvent)
 
 	fetchNostrData(config.NPUBDomain)
 
@@ -606,10 +607,10 @@ func (rl *rateLimiter) isAllowed(key string) bool {
 
 // Global rate limiters
 var (
-	pubkeyRateLimit = newRateLimiter(5, time.Minute)   // 5 events per minute per pubkey
-	ipRateLimit     = newRateLimiter(10, time.Minute)  // 10 events per minute per IP
-	connRateLimit   = newRateLimiter(2, time.Minute*2) // 2 connections per 2 minutes per IP
-	queryRateLimit  = newRateLimiter(30, time.Minute)  // 30 queries per minute per IP
+	pubkeyRateLimit = newRateLimiter(50, time.Minute)   // 50 events per minute per pubkey
+	ipRateLimit     = newRateLimiter(100, time.Minute)  // 100 events per minute per IP
+	connRateLimit   = newRateLimiter(20, time.Minute*2) // 20 connections per 2 minutes per IP
+	queryRateLimit  = newRateLimiter(300, time.Minute)  // 300 queries per minute per IP
 )
 
 // applySpamProtection applies rate limiting and spam protection policies
