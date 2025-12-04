@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -49,6 +50,7 @@ type Config struct {
 	TrustedClientKinds []int
 	MaxUploadSizeMB    int
 	RelayPort          string
+	AllowedMirrorHosts []string
 }
 
 type NostrData struct {
@@ -389,6 +391,12 @@ func main() {
 			return
 		}
 
+		// Validate URL against allowlist to prevent SSRF attacks
+		if !isAllowedMirrorURL(mirrorRequest.URL, config.AllowedMirrorHosts) {
+			http.Error(w, "Source URL host not in allowed list", http.StatusForbidden)
+			return
+		}
+
 		// Extract blob hash from source URL
 		blobHash := extractSha256FromURL(mirrorRequest.URL)
 		if blobHash == "" {
@@ -534,6 +542,7 @@ func LoadConfig() Config {
 		TrustedClientKinds: parseAllowedKinds(getEnvNullable("TRUSTED_CLIENT_KINDS")),
 		MaxUploadSizeMB:    getEnvIntWithDefault("MAX_UPLOAD_SIZE_MB", 200),
 		RelayPort:          getEnvWithDefault("RELAY_PORT", "3334"),
+		AllowedMirrorHosts: parseAllowedMirrorHosts(getEnvNullable("ALLOWED_MIRROR_HOSTS")),
 	}
 
 	relay.Info.Name = config.RelayName
@@ -747,6 +756,61 @@ func parseAllowedKinds(allowedKindsStr *string) []int {
 	}
 
 	return kinds
+}
+
+func parseAllowedMirrorHosts(hostsStr *string) []string {
+	if hostsStr == nil || strings.TrimSpace(*hostsStr) == "" {
+		return []string{} // Empty slice means mirror endpoint is disabled
+	}
+
+	hostsStrVal := strings.TrimSpace(*hostsStr)
+	hostStrings := strings.Split(hostsStrVal, ",")
+	var hosts []string
+
+	for _, hostStr := range hostStrings {
+		hostStr = strings.TrimSpace(hostStr)
+		if hostStr == "" {
+			continue
+		}
+		// Normalize: remove trailing slashes and convert to lowercase
+		hostStr = strings.ToLower(strings.TrimRight(hostStr, "/"))
+		hosts = append(hosts, hostStr)
+	}
+
+	if len(hosts) > 0 {
+		log.Printf("Mirror endpoint enabled for hosts: %v", hosts)
+	} else {
+		log.Printf("Mirror endpoint disabled (no allowed hosts configured)")
+	}
+
+	return hosts
+}
+
+// isAllowedMirrorURL validates that the URL is from an allowed host to prevent SSRF attacks
+func isAllowedMirrorURL(rawURL string, allowedHosts []string) bool {
+	if len(allowedHosts) == 0 {
+		return false // No hosts configured means mirror is disabled
+	}
+
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+
+	// Only allow http and https schemes
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return false
+	}
+
+	// Check if the host matches any allowed host
+	host := strings.ToLower(parsedURL.Host)
+	for _, allowedHost := range allowedHosts {
+		if host == allowedHost {
+			return true
+		}
+	}
+
+	return false
 }
 
 type DBBackend interface {
