@@ -205,10 +205,23 @@ func main() {
 
 	// Setup CORS middleware for all HTTP endpoints
 	c := cors.New(cors.Options{
-		AllowedOrigins: []string{"*"}, // In production, specify actual domains
+		AllowedOrigins: []string{
+			"*", // Allow all origins for now
+		},
 		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders: []string{"*"},
+		AllowedHeaders: []string{
+			"Accept",
+			"Authorization",
+			"Content-Type",
+			"X-CSRF-Token",
+			"X-Requested-With",
+		},
+		ExposedHeaders: []string{
+			"Content-Length",
+			"Content-Type",
+		},
 		AllowCredentials: false,
+		MaxAge:          86400, // 24 hours
 	})
 
 	// Wrap the relay with CORS middleware
