@@ -9,6 +9,7 @@ require (
 	github.com/fiatjaf/khatru v0.15.2
 	github.com/joho/godotenv v1.5.1
 	github.com/nbd-wtf/go-nostr v0.49.5
+	github.com/rs/cors v1.11.1
 	github.com/spf13/afero v1.12.0
 	golang.org/x/term v0.30.0
 )
@@ -42,7 +43,6 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/puzpuzpuz/xsync/v3 v3.5.0 // indirect
-	github.com/rs/cors v1.11.1 // indirect
 	github.com/savsgio/gotils v0.0.0-20240704082632-aef3928b8a38 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect

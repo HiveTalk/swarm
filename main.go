@@ -24,6 +24,7 @@ import (
 	"github.com/fiatjaf/khatru/blossom"
 	"github.com/joho/godotenv"
 	"github.com/nbd-wtf/go-nostr"
+	"github.com/rs/cors"
 	"github.com/spf13/afero"
 )
 
@@ -202,11 +203,22 @@ func main() {
 	// Serve Bouquet client static files
 	setupBouquetHandler(relay)
 
+	// Setup CORS middleware for all HTTP endpoints
+	c := cors.New(cors.Options{
+		AllowedOrigins: []string{"*"}, // In production, specify actual domains
+		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders: []string{"*"},
+		AllowCredentials: false,
+	})
+
+	// Wrap the relay with CORS middleware
+	corsHandler := c.Handler(relay)
+
 	if !config.BlossomEnabled {
 		// Configure HTTP server with timeouts suitable for large file uploads
 		server := &http.Server{
 			Addr:              ":" + config.RelayPort,
-			Handler:           relay,
+			Handler:           corsHandler,
 			ReadTimeout:       15 * time.Minute, // Increased to 15 minutes for very large files
 			WriteTimeout:      15 * time.Minute, // Increased to 15 minutes
 			IdleTimeout:       5 * time.Minute,  // Increased idle timeout
@@ -475,7 +487,7 @@ func main() {
 	// Configure HTTP server with timeouts suitable for large file uploads
 	server := &http.Server{
 		Addr:              ":" + config.RelayPort,
-		Handler:           relay,
+		Handler:           corsHandler,
 		ReadTimeout:       15 * time.Minute, // Increased to 15 minutes for very large files
 		WriteTimeout:      15 * time.Minute, // Increased to 15 minutes
 		IdleTimeout:       5 * time.Minute,  // Increased idle timeout

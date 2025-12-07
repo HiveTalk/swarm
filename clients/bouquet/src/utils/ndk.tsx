@@ -26,7 +26,8 @@ type NDKContextType = {
 };
 
 const defaultRelays = [
-  // 'ws://localhost:4869',
+  // Local relay - automatically detects current domain
+  `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`,
   'wss://relay.damus.io',
   'wss://relay.nostr.band',
   'wss://relay.snort.social',
