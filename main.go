@@ -488,18 +488,32 @@ func main() {
 	server.ListenAndServe()
 }
 
-func fetchNostrData(teamDomain string) {
-	response, err := http.Get("https://" + teamDomain + "/.well-known/nostr.json")
-	if err != nil {
-		log.Printf("Error getting well known file: %v", err)
-		return
-	}
-	defer response.Body.Close()
+func fetchNostrData(npubDomain string) {
+	var body []byte
+	var err error
 
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		log.Printf("Error reading response body: %v", err)
-		return
+	if npubDomain == "" {
+		// Fall back to local file
+		body, err = os.ReadFile("./public/.well-known/nostr.json")
+		if err != nil {
+			log.Printf("Error reading local nostr.json: %v", err)
+			return
+		}
+		log.Println("Using local public/.well-known/nostr.json")
+	} else {
+		// Fetch from remote domain
+		response, err := http.Get("https://" + npubDomain + "/.well-known/nostr.json")
+		if err != nil {
+			log.Printf("Error getting well known file: %v", err)
+			return
+		}
+		defer response.Body.Close()
+
+		body, err = io.ReadAll(response.Body)
+		if err != nil {
+			log.Printf("Error reading response body: %v", err)
+			return
+		}
 	}
 
 	var newData NostrData
@@ -514,7 +528,11 @@ func fetchNostrData(teamDomain string) {
 		fmt.Println(pubkey, names)
 	}
 
-	log.Println("Updated NostrData from .well-known file")
+	if npubDomain == "" {
+		log.Println("Updated NostrData from local .well-known file")
+	} else {
+		log.Println("Updated NostrData from remote .well-known file")
+	}
 }
 
 func LoadConfig() Config {
@@ -535,8 +553,8 @@ func LoadConfig() Config {
 		PostgresHost:       getEnvNullable("POSTGRES_HOST"),
 		PostgresPort:       getEnvNullable("POSTGRES_PORT"),
 		DatabaseURL:        getEnvNullable("DATABASE_URL"),
-		TeamDomain:         getEnv("TEAM_DOMAIN"),
-		NPUBDomain:         getEnv("NPUB_DOMAIN"),
+		TeamDomain:         getEnvWithDefault("TEAM_DOMAIN", ""),
+		NPUBDomain:         getEnvWithDefault("NPUB_DOMAIN", ""),
 		BlossomEnabled:     getEnvBool("BLOSSOM_ENABLED"),
 		BlossomPath:        getEnvNullable("BLOSSOM_PATH"),
 		BlossomURL:         getEnvNullable("BLOSSOM_URL"),
