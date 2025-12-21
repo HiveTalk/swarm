@@ -38,6 +38,7 @@ type Config struct {
 	PostgresDB         *string
 	PostgresHost       *string
 	PostgresPort       *string
+	DatabaseURL        *string
 	TeamDomain         string
 	NPUBDomain         string
 	BlossomEnabled     bool
@@ -201,7 +202,6 @@ func main() {
 
 	// Serve Bouquet client static files
 	setupBouquetHandler(relay)
-
 
 	if !config.BlossomEnabled {
 		// Configure HTTP server with timeouts suitable for large file uploads
@@ -534,6 +534,7 @@ func LoadConfig() Config {
 		PostgresDB:         getEnvNullable("POSTGRES_DB"),
 		PostgresHost:       getEnvNullable("POSTGRES_HOST"),
 		PostgresPort:       getEnvNullable("POSTGRES_PORT"),
+		DatabaseURL:        getEnvNullable("DATABASE_URL"),
 		TeamDomain:         getEnv("TEAM_DOMAIN"),
 		NPUBDomain:         getEnv("NPUB_DOMAIN"),
 		BlossomEnabled:     getEnvBool("BLOSSOM_ENABLED"),
@@ -852,9 +853,17 @@ func newLMDBBackend(path string) *lmdb.LMDBBackend {
 }
 
 func newPostgresBackend() DBBackend {
+	var dbURL string
+	if config.DatabaseURL != nil && *config.DatabaseURL != "" {
+		dbURL = *config.DatabaseURL
+		log.Println("Using DATABASE_URL for postgres connection")
+	} else {
+		dbURL = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			*config.PostgresUser, *config.PostgresPassword, *config.PostgresHost, *config.PostgresPort, *config.PostgresDB)
+		log.Println("Using individual POSTGRES_* variables for postgres connection")
+	}
 	return &postgresql.PostgresBackend{
-		DatabaseURL: fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			*config.PostgresUser, *config.PostgresPassword, *config.PostgresHost, *config.PostgresPort, *config.PostgresDB),
+		DatabaseURL: dbURL,
 	}
 }
 
