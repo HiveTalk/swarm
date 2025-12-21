@@ -28,30 +28,31 @@ import (
 )
 
 type Config struct {
-	RelayName          string
-	RelayPubkey        string
-	RelayDescription   string
-	DBEngine           *string
-	DBPath             *string
-	PostgresUser       *string
-	PostgresPassword   *string
-	PostgresDB         *string
-	PostgresHost       *string
-	PostgresPort       *string
-	DatabaseURL        *string
-	TeamDomain         string
-	NPUBDomain         string
-	BlossomEnabled     bool
-	BlossomPath        *string
-	BlossomURL         *string
-	WebSocketURL       *string
-	AllowedKinds       []int
-	PublicAllowedKinds []int
-	TrustedClientName  string
-	TrustedClientKinds []int
-	MaxUploadSizeMB    int
-	RelayPort          string
-	AllowedMirrorHosts []string
+	RelayName             string
+	RelayPubkey           string
+	RelayDescription      string
+	DBEngine              *string
+	DBPath                *string
+	PostgresUser          *string
+	PostgresPassword      *string
+	PostgresDB            *string
+	PostgresHost          *string
+	PostgresPort          *string
+	DatabaseURL           *string
+	TeamDomain            string
+	NPUBDomain            string
+	BlossomEnabled        bool
+	BlossomPath           *string
+	BlossomURL            *string
+	WebSocketURL          *string
+	AllowedKinds          []int
+	PublicAllowedKinds    []int
+	TrustedClientName     string
+	TrustedClientKinds    []int
+	TrustedClientAllKinds bool
+	MaxUploadSizeMB       int
+	RelayPort             string
+	AllowedMirrorHosts    []string
 }
 
 type NostrData struct {
@@ -86,11 +87,17 @@ func main() {
 	}()
 
 	relay.RejectEvent = append(relay.RejectEvent, func(ctx context.Context, event *nostr.Event) (reject bool, msg string) {
-		// Check for trusted client exception: allow specific kinds from a specific client
+		// Check for trusted client exception: allow specific kinds (or all kinds) from a specific client
 		trustedClientException := false
-		if config.TrustedClientName != "" && len(config.TrustedClientKinds) > 0 {
+		if config.TrustedClientName != "" {
 			for _, tag := range event.Tags {
 				if len(tag) >= 2 && tag[0] == "client" && tag[1] == config.TrustedClientName {
+					// If all kinds allowed for trusted client, allow immediately
+					if config.TrustedClientAllKinds {
+						trustedClientException = true
+						break
+					}
+					// Otherwise check specific kinds
 					for _, kc := range config.TrustedClientKinds {
 						if event.Kind == kc {
 							trustedClientException = true
@@ -542,30 +549,31 @@ func LoadConfig() Config {
 	}
 
 	config = Config{
-		RelayName:          getEnv("RELAY_NAME"),
-		RelayPubkey:        getEnv("RELAY_PUBKEY"),
-		RelayDescription:   getEnv("RELAY_DESCRIPTION"),
-		DBEngine:           getEnvNullable("DB_ENGINE"),
-		DBPath:             getEnvNullable("DB_PATH"),
-		PostgresUser:       getEnvNullable("POSTGRES_USER"),
-		PostgresPassword:   getEnvNullable("POSTGRES_PASSWORD"),
-		PostgresDB:         getEnvNullable("POSTGRES_DB"),
-		PostgresHost:       getEnvNullable("POSTGRES_HOST"),
-		PostgresPort:       getEnvNullable("POSTGRES_PORT"),
-		DatabaseURL:        getEnvNullable("DATABASE_URL"),
-		TeamDomain:         getEnvWithDefault("TEAM_DOMAIN", ""),
-		NPUBDomain:         getEnvWithDefault("NPUB_DOMAIN", ""),
-		BlossomEnabled:     getEnvBool("BLOSSOM_ENABLED"),
-		BlossomPath:        getEnvNullable("BLOSSOM_PATH"),
-		BlossomURL:         getEnvNullable("BLOSSOM_URL"),
-		WebSocketURL:       getEnvNullable("WEBSOCKET_URL"),
-		AllowedKinds:       parseAllowedKinds(getEnvNullable("ALLOWED_KINDS")),
-		PublicAllowedKinds: parseAllowedKinds(getEnvNullable("PUBLIC_ALLOWED_KINDS")),
-		TrustedClientName:  getEnvWithDefault("TRUSTED_CLIENT_NAME", ""),
-		TrustedClientKinds: parseAllowedKinds(getEnvNullable("TRUSTED_CLIENT_KINDS")),
-		MaxUploadSizeMB:    getEnvIntWithDefault("MAX_UPLOAD_SIZE_MB", 200),
-		RelayPort:          getEnvWithDefault("RELAY_PORT", "3334"),
-		AllowedMirrorHosts: parseAllowedMirrorHosts(getEnvNullable("ALLOWED_MIRROR_HOSTS")),
+		RelayName:             getEnv("RELAY_NAME"),
+		RelayPubkey:           getEnv("RELAY_PUBKEY"),
+		RelayDescription:      getEnv("RELAY_DESCRIPTION"),
+		DBEngine:              getEnvNullable("DB_ENGINE"),
+		DBPath:                getEnvNullable("DB_PATH"),
+		PostgresUser:          getEnvNullable("POSTGRES_USER"),
+		PostgresPassword:      getEnvNullable("POSTGRES_PASSWORD"),
+		PostgresDB:            getEnvNullable("POSTGRES_DB"),
+		PostgresHost:          getEnvNullable("POSTGRES_HOST"),
+		PostgresPort:          getEnvNullable("POSTGRES_PORT"),
+		DatabaseURL:           getEnvNullable("DATABASE_URL"),
+		TeamDomain:            getEnvWithDefault("TEAM_DOMAIN", ""),
+		NPUBDomain:            getEnvWithDefault("NPUB_DOMAIN", ""),
+		BlossomEnabled:        getEnvBool("BLOSSOM_ENABLED"),
+		BlossomPath:           getEnvWithDefaultPtr("BLOSSOM_PATH", "blossom/"),
+		BlossomURL:            getEnvWithDefaultPtr("BLOSSOM_URL", "http://localhost:3334"),
+		WebSocketURL:          getEnvWithDefaultPtr("WEBSOCKET_URL", "wss://localhost:3334"),
+		AllowedKinds:          parseAllowedKinds(getEnvNullable("ALLOWED_KINDS")),
+		PublicAllowedKinds:    parseAllowedKinds(getEnvNullable("PUBLIC_ALLOWED_KINDS")),
+		TrustedClientName:     getEnvWithDefault("TRUSTED_CLIENT_NAME", ""),
+		TrustedClientKinds:    parseTrustedClientKinds(getEnvNullable("TRUSTED_CLIENT_KINDS")),
+		TrustedClientAllKinds: isTrustedClientAllKinds(getEnvNullable("TRUSTED_CLIENT_KINDS")),
+		MaxUploadSizeMB:       getEnvIntWithDefault("MAX_UPLOAD_SIZE_MB", 200),
+		RelayPort:             getEnvWithDefault("RELAY_PORT", "3334"),
+		AllowedMirrorHosts:    parseAllowedMirrorHosts(getEnvNullable("ALLOWED_MIRROR_HOSTS")),
 	}
 
 	relay.Info.Name = config.RelayName
@@ -741,6 +749,14 @@ func getEnvIntWithDefault(key string, defaultValue int) int {
 	return intValue
 }
 
+func getEnvWithDefaultPtr(key string, defaultValue string) *string {
+	value, exists := os.LookupEnv(key)
+	if !exists || strings.TrimSpace(value) == "" {
+		return &defaultValue
+	}
+	return &value
+}
+
 func getEnvWithDefault(key string, defaultValue string) string {
 	value, exists := os.LookupEnv(key)
 	if !exists || strings.TrimSpace(value) == "" {
@@ -779,6 +795,25 @@ func parseAllowedKinds(allowedKindsStr *string) []int {
 	}
 
 	return kinds
+}
+
+func isTrustedClientAllKinds(kindsStr *string) bool {
+	if kindsStr == nil {
+		return false
+	}
+	return strings.TrimSpace(strings.ToLower(*kindsStr)) == "all"
+}
+
+func parseTrustedClientKinds(kindsStr *string) []int {
+	if kindsStr == nil || strings.TrimSpace(*kindsStr) == "" {
+		return []int{}
+	}
+	// If "all" is specified, return empty slice (TrustedClientAllKinds flag handles this)
+	if strings.TrimSpace(strings.ToLower(*kindsStr)) == "all" {
+		log.Println("Trusted client configured to allow ALL kinds")
+		return []int{}
+	}
+	return parseAllowedKinds(kindsStr)
 }
 
 func parseAllowedMirrorHosts(hostsStr *string) []string {
