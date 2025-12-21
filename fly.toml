@@ -11,12 +11,45 @@ primary_region = 'sjc'
 
 # Set DATABASE_URL as a secret: fly secrets set DATABASE_URL='postgres://...'
 [env]
+  # Required
   RELAY_NAME = "Zapnews Swarm Relay"
   RELAY_PUBKEY = "8ad8f1f78c8e11966242e28a7ca15c936b23a999d5fb91bfe4e4472e2d6eaf55"
   RELAY_DESCRIPTION = "Zapnews Nostr relay"
+  
+  # Database
   DB_ENGINE = "postgres"
+  # DB_PATH = "db/"  # Only for badger/lmdb
+  
+  # Optional domains (leave empty to use local public/.well-known/nostr.json)
+  # TEAM_DOMAIN = ""
+  # NPUB_DOMAIN = ""
+  
+  # Server
   RELAY_PORT = "3334"
-  # NPUB_DOMAIN = ""  # Optional: leave empty to use local public/.well-known/nostr.json
+  
+  # Blossom file storage
+  BLOSSOM_ENABLED = "false"
+  # BLOSSOM_PATH = "blossom/"
+  # BLOSSOM_URL = "http://localhost:3334"
+  
+  # WebSocket URL (for frontend)
+  # WEBSOCKET_URL = "wss://zapnews-swarm-relay.fly.dev"
+  
+  # Kind filtering
+  # ALLOWED_KINDS: blank = allow all kinds for team members
+  # PUBLIC_ALLOWED_KINDS: blank = public cannot post, only team members
+  ALLOWED_KINDS = ""
+  PUBLIC_ALLOWED_KINDS = ""
+  
+  # Trusted client override (set TRUSTED_CLIENT_KINDS="all" to allow any kind)
+  TRUSTED_CLIENT_NAME = ""
+  TRUSTED_CLIENT_KINDS = ""
+  
+  # Upload limits
+  MAX_UPLOAD_SIZE_MB = "200"
+  
+  # Mirror endpoint (blank = disabled)
+  ALLOWED_MIRROR_HOSTS = ""
 
 [http_service]
   internal_port = 3334
