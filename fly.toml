@@ -1,0 +1,33 @@
+# fly.toml
+app = "swarm-relay"
+primary_region = "iad"
+
+[build]
+dockerfile = "Dockerfile"
+
+[env]
+RELAY_NAME = "My Swarm Relay"
+RELAY_PUBKEY = "8ad8f1f78c8e11966242e28a7ca15c936b23a999d5fb91bfe4e4472e2d6eaf55"
+RELAY_DESCRIPTION = "A low-volume Nostr relay"
+DB_ENGINE = "postgres"
+POSTGRES_PORT = "5432"
+RELAY_PORT = "3334"
+PUBLIC_ALLOWED_KINDS = "1,25,30023,57"
+ALLOWED_KINDS = ""
+BLOSSOM_ENABLED = "false"
+
+[http_service]
+internal_port = 3334
+force_https = true
+auto_start_machines = true
+auto_stop_machines = true
+min_machines_running = 1
+
+[[services]]
+internal_port = 3334
+protocol = "tcp"
+
+[services.concurrency]
+type = "connections"
+hard_limit = 25
+soft_limit = 20
