@@ -3,7 +3,7 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'zapnews-swarm-relay'
+app = 'swarm-relay'
 primary_region = 'sjc'
 
 [build]
@@ -12,9 +12,9 @@ primary_region = 'sjc'
 # Set DATABASE_URL as a secret: fly secrets set DATABASE_URL='postgres://...'
 [env]
   # Required
-  RELAY_NAME = "Zapnews Swarm Relay"
+  RELAY_NAME = "Swarm Relay"
   RELAY_PUBKEY = "8ad8f1f78c8e11966242e28a7ca15c936b23a999d5fb91bfe4e4472e2d6eaf55"
-  RELAY_DESCRIPTION = "Zapnews Nostr relay"
+  RELAY_DESCRIPTION = "Team Nostr relay"
   
   # Database
   DB_ENGINE = "postgres"
@@ -22,7 +22,7 @@ primary_region = 'sjc'
   
   # Optional domains (leave empty to use local public/.well-known/nostr.json)
   # TEAM_DOMAIN = ""
-  # NPUB_DOMAIN = ""
+  NPUB_DOMAIN = ""
   
   # Server
   RELAY_PORT = "3334"
