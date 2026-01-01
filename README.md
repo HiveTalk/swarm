@@ -38,8 +38,6 @@ Additional features we added for production use:
 
 <img width="1075" height="682" alt="Screenshot 2025-08-16 at 6 32 59 PM" src="https://github.com/user-attachments/assets/30ac25d6-658e-411d-a656-317e51053d0e" />
 
-https://github.com/user-attachments/assets/0e2920d1-970f-4d5a-8edd-3211685bf1a8
-
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)

@@ -73,6 +73,8 @@ ENV DB_ENGINE=badger
 ENV DB_PATH=/app/db/
 ENV BLOSSOM_ENABLED=false
 ENV WEBSOCKET_URL=ws://localhost:3334
+ENV NPUB_DOMAIN="hivetalk.org"
+ENV TEAM_DOMAIN="swarm.hivetalk.org" 
 
 # Entrypoint simply runs the relay; configure via env vars
 ENTRYPOINT ["/app/swarm"]
