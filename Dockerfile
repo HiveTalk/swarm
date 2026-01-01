@@ -1,7 +1,33 @@
-# Single-stage Dockerfile for Swarm relay
-FROM golang:1.24
+# Multi-stage Dockerfile with Bouquet client build
+
+# Stage 1: Build Bouquet client (use full node image for better memory handling)
+FROM node:20 AS bouquet-builder
+
+WORKDIR /app/clients/bouquet
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Copy bouquet source
+COPY clients/bouquet/package.json clients/bouquet/pnpm-lock.yaml ./
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile
+
+# Copy rest of bouquet source
+COPY clients/bouquet/ ./
+
+# Build bouquet with adequate memory
+RUN NODE_OPTIONS='--max-old-space-size=4096' pnpm exec tsc && \
+    NODE_OPTIONS='--max-old-space-size=4096' pnpm exec vite build
+
+# Stage 2: Build Go binary
+FROM golang:1.24-alpine AS go-builder
 
 WORKDIR /app
+
+# Install build dependencies for CGO
+RUN apk add --no-cache git gcc musl-dev
 
 # Cache modules
 COPY go.mod go.sum ./
@@ -10,18 +36,32 @@ RUN go mod download
 # Copy the rest of the source
 COPY . .
 
-# Build binary for the container's native architecture
-RUN CGO_ENABLED=1 go build -o /app/swarm
+# Copy built bouquet from previous stage
+COPY --from=bouquet-builder /app/bouquet-dist ./bouquet-dist
 
-# Copy default .env.example so container can run with minimal config.
-# You can override by binding your own .env at runtime.
-COPY .env.example /app/.env
+# Build static binary
+RUN CGO_ENABLED=1 go build -ldflags="-s -w" -o /app/swarm
 
-# Expose default relay port; actual port is set via RELAY_PORT env
+# Stage 3: Runtime - minimal Alpine image
+FROM alpine:latest
+
+LABEL "language"="go"
+
+WORKDIR /app
+
+# Install runtime dependencies (CA certs for HTTPS, timezone data)
+RUN apk add --no-cache ca-certificates tzdata
+
+# Copy binary from builder
+COPY --from=go-builder /app/swarm /app/swarm
+
+# Copy public assets (for .well-known/nostr.json fallback)
+COPY --from=go-builder /app/public /app/public
+
+# Copy bouquet dist
+COPY --from=go-builder /app/bouquet-dist /app/bouquet-dist
+
 EXPOSE 3334
 
-# Use the same .env-driven config as bare-metal
-ENV CGO_ENABLED=1
-
-# Entrypoint simply runs the relay; configure via mounted .env or env vars
+# Entrypoint simply runs the relay; configure via env vars
 ENTRYPOINT ["/app/swarm"]

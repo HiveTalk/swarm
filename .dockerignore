@@ -1,0 +1,28 @@
+# Ignore local .env to allow docker-compose environment variables to take effect
+.env
+
+# Git
+.git
+.gitignore
+
+# Build artifacts
+*.exe
+swarm
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node modules (bouquet client)
+clients/bouquet/node_modules
+
+# Test files (may have conflicting main() functions)
+test_*.go
+*_test.go
+blossom-upload.go

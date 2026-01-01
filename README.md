@@ -103,49 +103,63 @@ Swarm includes comprehensive rate limiting and spam protection:
 2.  Add your environment variables to the `.env` file. For example:
 
     ```env
-      RELAY_NAME="Swarm"
-      RELAY_PUBKEY="8ad8f1f78c8e11966242e28a7ca15c936b23a999d5fb91bfe4e4472e2d6eaf55"
-      RELAY_DESCRIPTION="Swarm Hivetalk Team Relay"
-      
-      DB_ENGINE="badger" # lmdb, badger, postgres (default: postgres)
-      DB_PATH="db/" # only required for badger and lmdb
-      
-      RELAY_PORT="3334"
-      
-      POSTGRES_USER=swarm
-      POSTGRES_PASSWORD=password
-      POSTGRES_DB=relay
-      POSTGRES_HOST=localhost
-      POSTGRES_PORT=5437
-      
-      TEAM_DOMAIN="swarm.hivetalk.org" # Domain where the relay / site is served
-      NPUB_DOMAIN="hivetalk.org" # Domain that hosts .well-known/nostr.json
-      
-      BLOSSOM_ENABLED="true"
-      BLOSSOM_PATH="blossom/"
-      BLOSSOM_URL="http://localhost:3334"
-      
-      WEBSOCKET_URL="wss://localhost:3334"
-      
-      # Relay Kind Filtering
-      # ALLOWED_KINDS: Restricted to team members only
-      # PUBLIC_ALLOWED_KINDS: Any pubkey can post these kinds
-      # Leave blank to allow all kinds, or specify comma-separated list of allowed kinds
-      # Examples:
-      #   ALLOWED_KINDS="" (allow all kinds for team members)
-      #   ALLOWED_KINDS="0,1,5,10002,30311" (only allow specific kinds for team members)
-      #   PUBLIC_ALLOWED_KINDS="1,6,7" (allow any pubkey to post text notes, reposts, reactions)
-      ALLOWED_KINDS=""
-      PUBLIC_ALLOWED_KINDS=""
-      
-      # Trusted client override
-      # Events from this client (via ["client","<name>"] tag) are allowed for the
-      # configured kinds even if the pubkey is not in nostr.json
-      TRUSTED_CLIENT_NAME="The Lookup"
-      TRUSTED_CLIENT_KINDS="30017,31990"
-      
-      # Maximum file upload size in MB (default: 200)
-      MAX_UPLOAD_SIZE_MB=200
+    RELAY_NAME="Swarm"
+    RELAY_PUBKEY="8ad8f1f78c8e11966242e28a7ca15c936b23a999d5fb91bfe4e4472e2d6eaf55"
+    RELAY_DESCRIPTION="Swarm Hivetalk Team Relay"
+    
+    TEAM_DOMAIN="swarm.hivetalk.org" # Optional: Domain where the relay / site is served
+    NPUB_DOMAIN="hivetalk.org" # Optional: Domain that hosts .well-known/nostr.json (falls back to public/.well-known/nostr.json if not set)
+    
+    DB_ENGINE="postgres"
+    # DB_ENGINE="badger" # lmdb, badger, postgres (default: postgres)
+    # DB_PATH="db/" # only required for badger and lmdb
+    
+    # Option 1: FOR POSTGRES ONLY: Use DATABASE_URL (takes precedence if set)
+    DATABASE_URL=postgres://swarm:password@localhost:5437/relay?sslmode=disable
+    
+    # Option 2: Use individual postgres variables (used if DATABASE_URL is not set)
+    # POSTGRES_USER=swarm
+    # POSTGRES_PASSWORD=password
+    # POSTGRES_DB=relay
+    # POSTGRES_HOST=localhost
+    # POSTGRES_PORT=5437
+    
+    RELAY_PORT="3334"
+    
+    BLOSSOM_ENABLED="false"
+    BLOSSOM_PATH="blossom/"
+    BLOSSOM_URL="http://localhost:3334"
+    
+    WEBSOCKET_URL="wss://localhost:3334"
+    
+    # Relay Kind Filtering
+    # ALLOWED_KINDS: Restricted to team members only (blank = allow all kinds for team members)
+    # PUBLIC_ALLOWED_KINDS: Any pubkey can post these kinds (blank = public cannot post, only team members)
+    # Specify comma-separated list of allowed kinds
+    # Examples:
+    #   ALLOWED_KINDS="" (allow all kinds for team members)
+    #   ALLOWED_KINDS="0,1,5,10002,30311" (only allow specific kinds for team members)
+    #   PUBLIC_ALLOWED_KINDS="1,6,7" (allow any pubkey to post text notes, reposts, reactions)
+    ALLOWED_KINDS=""
+    PUBLIC_ALLOWED_KINDS= # (blank = public cannot post, only team members)
+    
+    # Trusted client override
+    # Events from this client (via ["client","<name>"] tag) are allowed for the
+    # configured kinds even if the pubkey is not in nostr.json
+    # Set TRUSTED_CLIENT_KINDS="all" to allow any kind from the trusted client or as comma separated list of kinds
+    TRUSTED_CLIENT_NAME=""
+    TRUSTED_CLIENT_KINDS="all"
+    
+    # Maximum file upload size in MB (default: 200)
+    MAX_UPLOAD_SIZE_MB=200
+    
+    # Allowed hosts for the /mirror endpoint (SSRF protection)
+    # Leave blank to disable the mirror endpoint entirely
+    # Specify comma-separated list of allowed hosts (with port if non-standard)
+    # Examples:
+    #   ALLOWED_MIRROR_HOSTS="blossom.example.com,cdn.example.org"
+    #   ALLOWED_MIRROR_HOSTS="blossom.primal.net,cdn.satellite.earth"
+    ALLOWED_MIRROR_HOSTS=
     ```
 
 ## Compiling the Application
@@ -216,27 +230,31 @@ docker run --rm \
 
 If you change `RELAY_PORT` in `.env`, update the `-p` mapping accordingly (e.g. `-p 7447:7447`).
 
-### Run with Postgres via docker-compose
+### Run with docker-compose (recommended)
 
-This repo includes a minimal `docker-compose.yml` for Postgres only. Example flow:
+The `docker-compose.yml` includes both Postgres and the Swarm relay. Environment variables are read from a `.env` file with sensible defaults.
 
 ```bash
-# 1. Start Postgres (uses .env for credentials/ports)
-docker compose up -d postgres
+# 1. Copy and customize environment variables
+cp .env.example .env
+# Edit .env with your values
 
-# 2. Build the Swarm image
-docker build -t hivetalk/swarm .
+# 2. Start everything
+docker compose up -d
 
-# 3. Run Swarm, pointing DB_* env vars at the postgres service
-docker run --rm \
-  --name swarm-relay \
-  -p 3334:3334 \
-  --env-file .env \
-  --add-host=host.docker.internal:host-gateway \
-  hivetalk/swarm
+# Or start with build
+docker compose up -d --build
 ```
 
-You can also create your own `docker-compose` service that uses this image and the same `.env` file.
+To override specific variables without editing `.env`:
+```bash
+RELAY_NAME="My Relay" docker compose up -d
+```
+
+To use a different env file:
+```bash
+docker compose --env-file .env.production up -d
+```
 
 ## Running the Application as a Service
 

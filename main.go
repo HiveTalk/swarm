@@ -543,9 +543,14 @@ func fetchNostrData(npubDomain string) {
 }
 
 func LoadConfig() Config {
-	err := godotenv.Load(".env")
-	if err != nil {
-		log.Fatalf("Error loading .env file")
+	// Load .env file if it exists, but don't overwrite existing environment variables
+	// This allows docker-compose environment variables to take precedence
+	if envMap, err := godotenv.Read(".env"); err == nil {
+		for key, value := range envMap {
+			if os.Getenv(key) == "" {
+				os.Setenv(key, value)
+			}
+		}
 	}
 
 	config = Config{
