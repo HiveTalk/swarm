@@ -63,8 +63,16 @@ COPY --from=go-builder /app/bouquet-dist /app/bouquet-dist
 
 EXPOSE 3334
 
+# Set default environment variables (can be overridden by Zeabur env vars)
 ENV CGO_ENABLED=1
 ENV RELAY_PORT=3334
+ENV RELAY_NAME=Swarm Relay
+ENV RELAY_PUBKEY=8ad8f1f78c8e11966242e28a7ca15c936b23a999d5fb91bfe4e4472e2d6eaf55
+ENV RELAY_DESCRIPTION=Team Nostr relay
+ENV DB_ENGINE=badger
+ENV DB_PATH=/app/db/
+ENV BLOSSOM_ENABLED=false
+ENV WEBSOCKET_URL=ws://localhost:3334
 
 # Entrypoint simply runs the relay; configure via env vars
 ENTRYPOINT ["/app/swarm"]
