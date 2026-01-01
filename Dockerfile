@@ -63,5 +63,8 @@ COPY --from=go-builder /app/bouquet-dist /app/bouquet-dist
 
 EXPOSE 3334
 
+ENV CGO_ENABLED=1
+ENV RELAY_PORT=3334
+
 # Entrypoint simply runs the relay; configure via env vars
 ENTRYPOINT ["/app/swarm"]
