@@ -233,7 +233,11 @@ const frontPageTemplate = `<!DOCTYPE html>
                 </div>
             </div>
 
-            <h2>Curator</h2>
+        </div>
+        {{end}}
+
+        <div class="card">
+            <h2>📋 Curator</h2>
             <div class="endpoint">
                 <div class="endpoint-title">
                     <span class="method get">WEB APP</span>
@@ -250,7 +254,6 @@ const frontPageTemplate = `<!DOCTYPE html>
                 </div>
             </div>
         </div>
-        {{end}}
 
 
         <div class="card">

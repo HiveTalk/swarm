@@ -24,6 +24,7 @@ Additional features we added for production use:
    - Max size upload configuration
    - Added `/mirror` endpoint to allow for syncing content with other relays
    - Added `/list` endpoint to allow for listing content for a specific user
+   - **S3/Tigris Storage Backend**: Optional S3-compatible storage for media files (Tigris, AWS S3, MinIO, etc.)
 - **Relay Kind Filtering**
    - Support to limit kinds allowed, kinds specified in .env file
    - Separate configuration for public vs team member allowed kinds
@@ -158,7 +159,23 @@ Swarm includes comprehensive rate limiting and spam protection:
     #   ALLOWED_MIRROR_HOSTS="blossom.example.com,cdn.example.org"
     #   ALLOWED_MIRROR_HOSTS="blossom.primal.net,cdn.satellite.earth"
     ALLOWED_MIRROR_HOSTS=
+    
+    # S3/Tigris Storage Backend (optional - defaults to filesystem)
+    # Use "s3" to store media in S3-compatible storage instead of local filesystem
+    STORAGE_BACKEND="filesystem"  # or "s3"
+    
+    # S3 Configuration (only required when STORAGE_BACKEND="s3")
+    # For Tigris on Fly.io: https://fly.storage.tigris.dev
+    # For Tigris outside Fly.io: https://t3.storage.dev
+    S3_ENDPOINT=""
+    S3_BUCKET=""
+    S3_REGION="auto"
+    AWS_ACCESS_KEY_ID=""
+    AWS_SECRET_ACCESS_KEY=""
+    S3_PUBLIC_URL=""  # Optional: CDN URL for redirect optimization
     ```
+
+For a complete list of all environment variables, see [ENV_VARIABLES.md](ENV_VARIABLES.md).
 
 ## Compiling the Application
 
