@@ -1,0 +1,73 @@
+name: Add NIP-05 Identifier
+
+on:
+  repository_dispatch:
+    types: [add-nip05]
+
+jobs:
+  add-nip05:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate inputs
+        id: validate
+        run: |
+          USERNAME="${{ github.event.client_payload.username }}"
+          PUBKEY="${{ github.event.client_payload.pubkey }}"
+          
+          # Validate username format
+          if [[ ! "$USERNAME" =~ ^[a-z0-9_\.\-]+$ ]]; then
+            echo "::error::Invalid username format"
+            exit 1
+          fi
+          
+          # Validate hex pubkey format (64 hex characters)
+          if [[ ! "$PUBKEY" =~ ^[a-f0-9]{64}$ ]]; then
+            echo "::error::Invalid pubkey format (must be 64 hex characters)"
+            exit 1
+          fi
+          
+          echo "username=$USERNAME" >> $GITHUB_OUTPUT
+          echo "pubkey=$PUBKEY" >> $GITHUB_OUTPUT
+
+      - name: Update nostr.json
+        run: |
+          USERNAME="${{ steps.validate.outputs.username }}"
+          PUBKEY="${{ steps.validate.outputs.pubkey }}"
+          
+          # Read current file
+          CURRENT=$(cat .well-known/nostr.json)
+          
+          # Check if username already exists
+          if echo "$CURRENT" | jq -e ".names[\"$USERNAME\"]" > /dev/null 2>&1; then
+            echo "::error::Username '$USERNAME' already exists"
+            exit 1
+          fi
+          
+          # Add new entry and sort
+          echo "$CURRENT" | jq --arg user "$USERNAME" --arg key "$PUBKEY" \
+            '.names[$user] = $key | .names = (.names | to_entries | sort_by(.key) | from_entries)' \
+            > .well-known/nostr.json.tmp
+          
+          mv .well-known/nostr.json.tmp .well-known/nostr.json
+          
+          echo "Added $USERNAME with pubkey $PUBKEY"
+          cat .well-known/nostr.json
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "Add NIP-05 identifier for ${{ steps.validate.outputs.username }}"
+          title: "Add NIP-05 identifier for ${{ steps.validate.outputs.username }}"
+          body: |
+            ## NIP-05 Registration Request
+            
+            - **Username:** ${{ steps.validate.outputs.username }}
+            - **Hex Public Key:** `${{ steps.validate.outputs.pubkey }}`
+            
+            This PR was automatically generated via the NIP-05 registration form.
+          branch: "add-nip05-${{ steps.validate.outputs.username }}"
+          delete-branch: true

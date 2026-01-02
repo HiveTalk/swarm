@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -216,6 +217,9 @@ func main() {
 
 	// Serve Bouquet client static files
 	setupBouquetHandler(relay)
+
+	// Add NIP-05 service handlers
+	setupNIP05Handlers(relay, config)
 
 	if !config.BlossomEnabled {
 		// Configure HTTP server with timeouts suitable for large file uploads
@@ -1060,4 +1064,155 @@ func setupBouquetHandler(relay *khatru.Relay) {
 	relay.Router().HandleFunc("/bouquet", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/bouquet/", http.StatusMovedPermanently)
 	})
+}
+
+// setupNIP05Handlers adds the NIP-05 service endpoints
+func setupNIP05Handlers(relay *khatru.Relay, config Config) {
+	// Serve the NIP-05 registration page
+	relay.Router().HandleFunc("/add-nip05", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		http.ServeFile(w, r, "./public/add-nip05.html")
+	})
+
+	// Handle /add-nip05/ (with trailing slash) - redirect to /add-nip05
+	relay.Router().HandleFunc("/add-nip05/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/add-nip05", http.StatusMovedPermanently)
+	})
+
+	// API endpoint for NIP-05 submission
+	relay.Router().HandleFunc("/api/submit-nip05", func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		// Handle CORS preflight
+		if r.Method == "OPTIONS" {
+			w.Header().Set("Access-Control-Max-Age", "86400")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Parse request body
+		var request struct {
+			Username string `json:"username"`
+			Pubkey   string `json:"pubkey"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		// Validate inputs
+		username := strings.TrimSpace(strings.ToLower(request.Username))
+		pubkey := strings.TrimSpace(request.Pubkey)
+
+		// Username validation
+		if !matchUsernamePattern(username) {
+			http.Error(w, "Invalid username format", http.StatusBadRequest)
+			return
+		}
+
+		// Pubkey validation and conversion
+		hexPubkey, err := validateAndConvertPubkey(pubkey)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Get GitHub configuration from environment
+		githubToken := os.Getenv("GITHUB_TOKEN")
+		githubOwner := getEnvWithDefault("GITHUB_OWNER", "bitkarrot")
+		githubRepo := getEnvWithDefault("GITHUB_REPO", "nip05-service")
+
+		if githubToken == "" {
+			http.Error(w, "Server configuration error", http.StatusInternalServerError)
+			return
+		}
+
+		// Trigger GitHub repository_dispatch event
+		payload := map[string]interface{}{
+			"event_type": "add-nip05",
+			"client_payload": map[string]string{
+				"username": username,
+				"pubkey":   hexPubkey,
+			},
+		}
+
+		payloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		resp, err := http.Post(
+			fmt.Sprintf("https://api.github.com/repos/%s/%s/dispatches", githubOwner, githubRepo),
+			"application/vnd.github.v3+json",
+			bytes.NewBuffer(payloadBytes),
+		)
+		if err != nil {
+			http.Error(w, "Failed to submit request", http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusCreated {
+			http.Error(w, "Failed to submit request", http.StatusInternalServerError)
+			return
+		}
+
+		// Return success response
+		response := map[string]interface{}{
+			"success":  true,
+			"message":  fmt.Sprintf("Request submitted! A pull request will be created for %s", username),
+			"username": username,
+			"pubkey":   hexPubkey,
+			"pr_url":   fmt.Sprintf("https://github.com/%s/%s/pulls", githubOwner, githubRepo),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	})
+}
+
+// Helper functions for NIP-05 validation
+func matchUsernamePattern(username string) bool {
+	if len(username) < 1 || len(username) > 64 {
+		return false
+	}
+	matched, _ := regexp.MatchString(`^[a-z0-9_\.\-]+$`, username)
+	return matched
+}
+
+func validateAndConvertPubkey(input string) (string, error) {
+	input = strings.TrimSpace(input)
+
+	// Check if it's a valid 64-character hex string
+	if matched, _ := regexp.MatchString(`^[0-9a-fA-F]{64}$`, input); matched {
+		return strings.ToLower(input), nil
+	}
+
+	// Check if it's an npub and convert
+	if strings.HasPrefix(input, "npub1") {
+		// Simple bech32 decode for npub (without external library)
+		// This is a simplified implementation - in production you'd want to use nostr-tools
+		if len(input) != 63 {
+			return "", fmt.Errorf("invalid npub format")
+		}
+
+		// For now, we'll require the hex format directly or use a simple conversion
+		// In a full implementation, you'd use nostr-tools nip19.decode
+		return "", fmt.Errorf("npub conversion not implemented - please provide hex pubkey")
+	}
+
+	return "", fmt.Errorf("invalid public key format - must be npub1... or 64-character hex")
 }
