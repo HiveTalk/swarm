@@ -1,0 +1,51 @@
+# Swarm Relay - Environment Variables Template
+# Copy these to your Zeabur environment settings
+
+# === REQUIRED ===
+RELAY_NAME=Swarm Relay
+RELAY_PUBKEY=your-hex-pubkey-here
+RELAY_DESCRIPTION=Team Nostr relay
+
+# === SERVER ===
+RELAY_PORT=3334
+WEBSOCKET_URL=wss://your-domain.com
+
+# === DATABASE ===
+DB_ENGINE=badger
+DB_PATH=db/
+
+# PostgreSQL (if DB_ENGINE=postgresql)
+# DATABASE_URL=postgres://user:password@host:5432/dbname?sslmode=disable
+# POSTGRES_USER=
+# POSTGRES_PASSWORD=
+# POSTGRES_DB=
+# POSTGRES_HOST=
+# POSTGRES_PORT=
+
+# === TEAM / DOMAIN ===
+TEAM_DOMAIN=
+NPUB_DOMAIN=
+
+# === BLOSSOM MEDIA STORAGE ===
+BLOSSOM_ENABLED=false
+BLOSSOM_PATH=blossom/
+BLOSSOM_URL=https://your-domain.com
+MAX_UPLOAD_SIZE_MB=200
+ALLOWED_MIRROR_HOSTS=
+
+# === S3/TIGRIS STORAGE (optional) ===
+STORAGE_BACKEND=filesystem
+S3_ENDPOINT=
+S3_BUCKET=
+S3_REGION=auto
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+S3_PUBLIC_URL=
+
+# === EVENT KIND FILTERING ===
+ALLOWED_KINDS=
+PUBLIC_ALLOWED_KINDS=
+
+# === TRUSTED CLIENT ===
+TRUSTED_CLIENT_NAME=
+TRUSTED_CLIENT_KINDS=
