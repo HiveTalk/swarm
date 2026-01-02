@@ -172,7 +172,7 @@ Swarm includes comprehensive rate limiting and spam protection:
     S3_REGION="auto"
     AWS_ACCESS_KEY_ID=""
     AWS_SECRET_ACCESS_KEY=""
-    S3_PUBLIC_URL=""  # Optional: CDN URL for redirect optimization
+    S3_PUBLIC_URL=""  # Optional: https://fly.storage.tigris.dev/your-bucket
     ```
 
 For a complete list of all environment variables, see [ENV_VARIABLES.md](ENV_VARIABLES.md).

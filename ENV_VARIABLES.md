@@ -66,10 +66,14 @@ Use these when you want to store media in S3-compatible storage instead of the l
 | `AWS_ACCESS_KEY_ID` | AWS/S3 access key ID | (required for S3) |
 | `AWS_SECRET_ACCESS_KEY` | AWS/S3 secret access key | (required for S3) |
 
-### Tigris S3 Endpoints
+### Tigris S3 Configuration
 
+**API Endpoints (`S3_ENDPOINT`):**
 - **On Fly.io:** `https://fly.storage.tigris.dev`
 - **Outside Fly.io:** `https://t3.storage.dev`
+
+**Public URL (`S3_PUBLIC_URL`):**
+- `https://fly.storage.tigris.dev/your-bucket`
 
 ## Event Kind Filtering
 
@@ -116,7 +120,7 @@ S3_BUCKET=my-bucket
 S3_REGION=auto
 AWS_ACCESS_KEY_ID=tid_xxxxx
 AWS_SECRET_ACCESS_KEY=tsec_xxxxx
-S3_PUBLIC_URL=https://my-bucket.fly.storage.tigris.dev
+S3_PUBLIC_URL=https://fly.storage.tigris.dev/my-bucket
 ```
 
 ### Team Relay with Kind Filtering
