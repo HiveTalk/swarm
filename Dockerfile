@@ -74,7 +74,15 @@ ENV DB_PATH=/app/db/
 ENV BLOSSOM_ENABLED=false
 ENV WEBSOCKET_URL=ws://localhost:3334
 ENV NPUB_DOMAIN="hivetalk.org"
-ENV TEAM_DOMAIN="swarm.hivetalk.org" 
+ENV TEAM_DOMAIN="swarm.hivetalk.org"
+
+# S3/Tigris Storage (optional - defaults to filesystem) Otherwise, use "s3"
+ENV STORAGE_BACKEND=filesystem
+ENV S3_ENDPOINT=""
+ENV S3_BUCKET=""
+ENV S3_REGION=auto
+ENV S3_PUBLIC_URL=""
+# AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY should be set via secrets, not in Dockerfile
 
 # Entrypoint simply runs the relay; configure via env vars
 ENTRYPOINT ["/app/swarm"]

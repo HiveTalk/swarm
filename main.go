@@ -53,6 +53,12 @@ type Config struct {
 	MaxUploadSizeMB       int
 	RelayPort             string
 	AllowedMirrorHosts    []string
+	// S3 Storage Configuration
+	StorageBackend string
+	S3Endpoint     string
+	S3Bucket       string
+	S3Region       string
+	S3PublicURL    string
 }
 
 type NostrData struct {
@@ -65,6 +71,7 @@ var relay *khatru.Relay
 var db DBBackend
 var fs afero.Fs
 var config Config
+var s3Storage *S3Storage
 
 func main() {
 	relay = khatru.NewRelay()
@@ -229,59 +236,87 @@ func main() {
 
 	bl := blossom.New(relay, *config.BlossomURL)
 	bl.Store = blossom.EventStoreBlobIndexWrapper{Store: db, ServiceURL: bl.ServiceURL}
-	bl.StoreBlob = append(bl.StoreBlob, func(ctx context.Context, sha256 string, body []byte) error {
-		// Create context with timeout for large file operations
-		storeCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-		defer cancel()
 
-		file, err := fs.Create(*config.BlossomPath + sha256)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
+	if config.StorageBackend == "s3" && s3Storage != nil {
+		// S3 Storage Backend
+		bl.StoreBlob = append(bl.StoreBlob, func(ctx context.Context, sha256 string, body []byte) error {
+			return s3Storage.StoreBlob(ctx, sha256, body)
+		})
 
-		// Use streaming copy with context checking for large files
-		reader := bytes.NewReader(body)
-		buffer := make([]byte, 32*1024) // 32KB buffer for efficient copying
-
-		for {
-			select {
-			case <-storeCtx.Done():
-				return storeCtx.Err()
-			default:
+		bl.LoadBlob = append(bl.LoadBlob, func(ctx context.Context, sha256 string) (io.ReadSeeker, error) {
+			reader, redirectURL, err := s3Storage.LoadBlob(ctx, sha256)
+			if err != nil {
+				return nil, err
 			}
+			// If we have a redirect URL, we need to handle it differently
+			// The khatru blossom library expects just ReadSeeker, so we return the reader
+			// For S3 with public URL, the redirect is handled via the public URL config
+			if redirectURL != nil {
+				log.Printf("LoadBlob: S3 redirect URL available: %s", redirectURL.String())
+			}
+			return reader, nil
+		})
 
-			n, err := reader.Read(buffer)
-			if n > 0 {
-				if _, writeErr := file.Write(buffer[:n]); writeErr != nil {
-					return writeErr
-				}
-			}
-			if err == io.EOF {
-				break
-			}
+		bl.DeleteBlob = append(bl.DeleteBlob, func(ctx context.Context, sha256 string) error {
+			return s3Storage.DeleteBlob(ctx, sha256)
+		})
+	} else {
+		// Filesystem Storage Backend
+		bl.StoreBlob = append(bl.StoreBlob, func(ctx context.Context, sha256 string, body []byte) error {
+			// Create context with timeout for large file operations
+			storeCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+			defer cancel()
+
+			file, err := fs.Create(*config.BlossomPath + sha256)
 			if err != nil {
 				return err
 			}
-		}
+			defer file.Close()
 
-		return file.Sync() // Ensure data is written to disk
-	})
+			// Use streaming copy with context checking for large files
+			reader := bytes.NewReader(body)
+			buffer := make([]byte, 32*1024) // 32KB buffer for efficient copying
 
-	bl.LoadBlob = append(bl.LoadBlob, func(ctx context.Context, sha256 string) (io.ReadSeeker, error) {
-		filePath := *config.BlossomPath + sha256
-		log.Printf("LoadBlob: Attempting to open file at path: %s", filePath)
-		file, err := fs.Open(filePath)
-		if err != nil {
-			log.Printf("LoadBlob: Failed to open file %s: %v", filePath, err)
-			return nil, err
-		}
-		log.Printf("LoadBlob: Successfully opened file %s", filePath)
-		return file, nil
-	})
-	bl.DeleteBlob = append(bl.DeleteBlob, func(ctx context.Context, sha256 string) error {
-		return fs.Remove(*config.BlossomPath + sha256)
-	})
+			for {
+				select {
+				case <-storeCtx.Done():
+					return storeCtx.Err()
+				default:
+				}
+
+				n, err := reader.Read(buffer)
+				if n > 0 {
+					if _, writeErr := file.Write(buffer[:n]); writeErr != nil {
+						return writeErr
+					}
+				}
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					return err
+				}
+			}
+
+			return file.Sync() // Ensure data is written to disk
+		})
+
+		bl.LoadBlob = append(bl.LoadBlob, func(ctx context.Context, sha256 string) (io.ReadSeeker, error) {
+			filePath := *config.BlossomPath + sha256
+			log.Printf("LoadBlob: Attempting to open file at path: %s", filePath)
+			file, err := fs.Open(filePath)
+			if err != nil {
+				log.Printf("LoadBlob: Failed to open file %s: %v", filePath, err)
+				return nil, err
+			}
+			log.Printf("LoadBlob: Successfully opened file %s", filePath)
+			return file, nil
+		})
+
+		bl.DeleteBlob = append(bl.DeleteBlob, func(ctx context.Context, sha256 string) error {
+			return fs.Remove(*config.BlossomPath + sha256)
+		})
+	}
 	bl.RejectUpload = append(bl.RejectUpload, func(ctx context.Context, event *nostr.Event, size int, ext string) (bool, string, int) {
 		// Check for configurable size limit
 		maxSize := config.MaxUploadSizeMB * 1024 * 1024
@@ -314,10 +349,27 @@ func main() {
 
 		log.Printf("List blobs request for pubkey: %s", pubkey)
 
-		// Read all files from the blossom directory
+		// Read all files from storage backend
 		blobs := []map[string]interface{}{}
 
-		if config.BlossomPath != nil {
+		if config.StorageBackend == "s3" && s3Storage != nil {
+			// S3 Storage Backend
+			s3Blobs, err := s3Storage.ListBlobs(r.Context())
+			if err != nil {
+				log.Printf("Error listing S3 blobs: %v", err)
+			} else {
+				for _, blob := range s3Blobs {
+					blobs = append(blobs, map[string]interface{}{
+						"sha256":   blob.SHA256,
+						"size":     blob.Size,
+						"type":     blob.Type,
+						"url":      blob.URL,
+						"uploaded": blob.Uploaded,
+					})
+				}
+			}
+		} else if config.BlossomPath != nil {
+			// Filesystem Storage Backend
 			file, err := fs.Open(*config.BlossomPath)
 			if err != nil {
 				log.Printf("Error opening blossom directory: %v", err)
@@ -579,6 +631,12 @@ func LoadConfig() Config {
 		MaxUploadSizeMB:       getEnvIntWithDefault("MAX_UPLOAD_SIZE_MB", 200),
 		RelayPort:             getEnvWithDefault("RELAY_PORT", "3334"),
 		AllowedMirrorHosts:    parseAllowedMirrorHosts(getEnvNullable("ALLOWED_MIRROR_HOSTS")),
+		// S3 Storage Configuration
+		StorageBackend: getEnvWithDefault("STORAGE_BACKEND", "filesystem"),
+		S3Endpoint:     getEnvWithDefault("S3_ENDPOINT", ""),
+		S3Bucket:       getEnvWithDefault("S3_BUCKET", ""),
+		S3Region:       getEnvWithDefault("S3_REGION", "auto"),
+		S3PublicURL:    getEnvWithDefault("S3_PUBLIC_URL", ""),
 	}
 
 	relay.Info.Name = config.RelayName
@@ -597,10 +655,27 @@ func LoadConfig() Config {
 
 	fs = afero.NewOsFs()
 	if config.BlossomEnabled {
-		if config.BlossomPath == nil {
-			log.Fatalf("Blossom enabled but no path set")
+		if config.StorageBackend == "s3" {
+			// Initialize S3 storage
+			s3Cfg := getS3ConfigFromEnv()
+			if s3Cfg == nil {
+				log.Fatalf("S3 storage backend selected but missing required environment variables (S3_ENDPOINT, S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)")
+			}
+			s3Cfg.ServiceURL = *config.BlossomURL
+			var err error
+			s3Storage, err = NewS3Storage(*s3Cfg)
+			if err != nil {
+				log.Fatalf("Failed to initialize S3 storage: %v", err)
+			}
+			log.Printf("Blossom using S3 storage backend: %s/%s", s3Cfg.Endpoint, s3Cfg.Bucket)
+		} else {
+			// Filesystem storage
+			if config.BlossomPath == nil {
+				log.Fatalf("Blossom enabled but no path set")
+			}
+			fs.MkdirAll(*config.BlossomPath, 0755)
+			log.Printf("Blossom using filesystem storage backend: %s", *config.BlossomPath)
 		}
-		fs.MkdirAll(*config.BlossomPath, 0755)
 	}
 
 	return config

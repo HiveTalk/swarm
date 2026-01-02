@@ -44,6 +44,15 @@ services:
       
       # Mirror endpoint (blank = disabled)
       ALLOWED_MIRROR_HOSTS: ${ALLOWED_MIRROR_HOSTS:-}
+      
+      # S3/Tigris Storage (optional - defaults to filesystem)
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-filesystem}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-auto}
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
     volumes:
       - ./public:/app/public:ro
       - badger_data:/app/db
