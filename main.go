@@ -1210,7 +1210,7 @@ func validateAndConvertPubkey(input string) (string, error) {
 		return strings.ToLower(input), nil
 	}
 
-	// Check if it's an npub and convert
+	// If it's not hex, try to convert from npub (fallback)
 	if strings.HasPrefix(input, "npub1") {
 		// Use nostr-tools for npub conversion
 		// We'll implement a simple bech32 decoder for npub
