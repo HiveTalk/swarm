@@ -1084,10 +1084,20 @@ func setupNIP05Handlers(relay *khatru.Relay, config Config) {
 
 	// API endpoint for NIP-05 submission
 	relay.Router().HandleFunc("/api/submit-nip05", func(w http.ResponseWriter, r *http.Request) {
-		// Set CORS headers
+		// Set CORS headers and content type
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Content-Type", "application/json")
+
+		// Helper function to return JSON errors
+		returnError := func(message string, statusCode int) {
+			w.WriteHeader(statusCode)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   message,
+			})
+		}
 
 		// Handle CORS preflight
 		if r.Method == "OPTIONS" {
@@ -1097,7 +1107,7 @@ func setupNIP05Handlers(relay *khatru.Relay, config Config) {
 		}
 
 		if r.Method != "POST" {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			returnError("Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
@@ -1108,7 +1118,7 @@ func setupNIP05Handlers(relay *khatru.Relay, config Config) {
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			returnError("Invalid JSON", http.StatusBadRequest)
 			return
 		}
 
@@ -1118,14 +1128,14 @@ func setupNIP05Handlers(relay *khatru.Relay, config Config) {
 
 		// Username validation
 		if !matchUsernamePattern(username) {
-			http.Error(w, "Invalid username format", http.StatusBadRequest)
+			returnError("Invalid username format", http.StatusBadRequest)
 			return
 		}
 
 		// Pubkey validation and conversion
 		hexPubkey, err := validateAndConvertPubkey(pubkey)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			returnError(err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -1135,7 +1145,7 @@ func setupNIP05Handlers(relay *khatru.Relay, config Config) {
 		githubRepo := getEnvWithDefault("GITHUB_REPO", "nip05-service")
 
 		if githubToken == "" {
-			http.Error(w, "Server configuration error", http.StatusInternalServerError)
+			returnError("Server configuration error", http.StatusInternalServerError)
 			return
 		}
 
@@ -1150,7 +1160,7 @@ func setupNIP05Handlers(relay *khatru.Relay, config Config) {
 
 		payloadBytes, err := json.Marshal(payload)
 		if err != nil {
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			returnError("Internal server error", http.StatusInternalServerError)
 			return
 		}
 
@@ -1160,13 +1170,13 @@ func setupNIP05Handlers(relay *khatru.Relay, config Config) {
 			bytes.NewBuffer(payloadBytes),
 		)
 		if err != nil {
-			http.Error(w, "Failed to submit request", http.StatusInternalServerError)
+			returnError("Failed to submit request", http.StatusInternalServerError)
 			return
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusCreated {
-			http.Error(w, "Failed to submit request", http.StatusInternalServerError)
+			returnError("Failed to submit request", http.StatusInternalServerError)
 			return
 		}
 
@@ -1179,7 +1189,6 @@ func setupNIP05Handlers(relay *khatru.Relay, config Config) {
 			"pr_url":   fmt.Sprintf("https://github.com/%s/%s/pulls", githubOwner, githubRepo),
 		}
 
-		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
 	})
 }
@@ -1203,16 +1212,96 @@ func validateAndConvertPubkey(input string) (string, error) {
 
 	// Check if it's an npub and convert
 	if strings.HasPrefix(input, "npub1") {
-		// Simple bech32 decode for npub (without external library)
-		// This is a simplified implementation - in production you'd want to use nostr-tools
-		if len(input) != 63 {
-			return "", fmt.Errorf("invalid npub format")
+		// Use nostr-tools for npub conversion
+		// We'll implement a simple bech32 decoder for npub
+		hexKey, err := decodeNpub(input)
+		if err != nil {
+			return "", fmt.Errorf("invalid npub format: %v", err)
 		}
-
-		// For now, we'll require the hex format directly or use a simple conversion
-		// In a full implementation, you'd use nostr-tools nip19.decode
-		return "", fmt.Errorf("npub conversion not implemented - please provide hex pubkey")
+		return hexKey, nil
 	}
 
 	return "", fmt.Errorf("invalid public key format - must be npub1... or 64-character hex")
+}
+
+// decodeNpub converts npub1... format to hex string
+func decodeNpub(npub string) (string, error) {
+	if len(npub) != 63 {
+		return "", fmt.Errorf("invalid npub length")
+	}
+
+	// Remove the "npub1" prefix
+	data := npub[5:]
+
+	// Decode from bech32
+	converted, err := bech32Decode(data)
+	if err != nil {
+		return "", err
+	}
+
+	// Convert from 5-bit groups to 8-bit groups
+	result, err := convertBits(converted, 5, 8, false)
+	if err != nil {
+		return "", err
+	}
+
+	// Verify length (should be 32 bytes for pubkey)
+	if len(result) != 32 {
+		return "", fmt.Errorf("invalid decoded data length")
+	}
+
+	// Convert to hex string
+	return fmt.Sprintf("%x", result), nil
+}
+
+// Simple bech32 decoder implementation
+func bech32Decode(s string) ([]byte, error) {
+	// Bech32 character set
+	charset := "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+
+	// Convert string to byte indices
+	var converted []byte
+	for _, char := range s {
+		index := strings.IndexByte(charset, byte(char))
+		if index == -1 {
+			return nil, fmt.Errorf("invalid character in bech32 string")
+		}
+		converted = append(converted, byte(index))
+	}
+
+	return converted, nil
+}
+
+// ConvertBits converts from bit groups of size fromBits to bit groups of size toBits
+func convertBits(data []byte, fromBits, toBits uint, pad bool) ([]byte, error) {
+	acc := uint(0)
+	bits := uint(0)
+	var result []byte
+	maxv := uint((1 << toBits) - 1)
+	maxAcc := uint((1 << (fromBits + toBits - 1)) - 1)
+
+	for i := 0; i < len(data); i++ {
+		value := uint(data[i])
+		if (value >> fromBits) != 0 {
+			return nil, fmt.Errorf("invalid data range")
+		}
+
+		acc = ((acc << fromBits) | value) & maxAcc
+		bits += fromBits
+
+		for bits >= toBits {
+			bits -= toBits
+			result = append(result, byte((acc>>bits)&maxv))
+		}
+	}
+
+	if pad {
+		if bits > 0 {
+			result = append(result, byte((acc<<(toBits-bits))&maxv))
+		}
+	} else if bits >= fromBits || ((acc<<(toBits-bits))&maxv) != 0 {
+		return nil, fmt.Errorf("invalid padding")
+	}
+
+	return result, nil
 }
