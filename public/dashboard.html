@@ -446,6 +446,7 @@
                     <div>
                         <h1 id="relayName">Loading...</h1>
                         <p id="relayDescription">Loading...</p>
+                        <p id="userGreeting" style="margin-top: 0.5rem; font-weight: 500; color: #667eea;"></p>
                     </div>
                     <button id="logoutBtn" class="logout-btn">Logout</button>
                 </div>
@@ -540,6 +541,7 @@
             environment: {},
             isRemote: false
         };
+        let currentUserPubkey = '';
 
         // Nostr Login Integration
         const nostrLoginSection = document.getElementById('nostrLoginSection');
@@ -609,13 +611,14 @@
                 if (response.ok) {
                     const data = await response.json();
                     currentData = data;
+                    currentUserPubkey = pubkey;
                     showDashboard();
                 } else {
                     const error = await response.json();
                     loginError.textContent = error.error || 'Login failed';
                     
-                    // If using Nostr extension, show specific error
-                    if (e.detail && (e.detail.type === 'login' || e.detail.type === 'signup')) {
+                    // If the login failed, it might be because the pubkey is not the relay operator
+                    if (loginError.textContent === 'Invalid pubkey') {
                         loginError.textContent += '. This dashboard requires the relay operator pubkey.';
                     }
                 }
@@ -633,6 +636,18 @@
             document.getElementById('relayName').textContent = currentData.relayName;
             document.getElementById('relayDescription').textContent = currentData.relayDescription;
             
+            // Find username for greeting
+            let username = 'Admin';
+            if (currentData.users) {
+                for (const [name, pk] of Object.entries(currentData.users)) {
+                    if (pk === currentUserPubkey) {
+                        username = name;
+                        break;
+                    }
+                }
+            }
+            document.getElementById('userGreeting').textContent = `Hello ${username}!`;
+            
             // Load initial data
             loadUsers();
             loadEnvironment();
@@ -645,6 +660,11 @@
                 document.dispatchEvent(new CustomEvent('nlLogout'));
             }
             
+            // Clear all local storage and session storage
+            localStorage.clear();
+            sessionStorage.clear();
+            currentUserPubkey = '';
+            
             // Show login screen
             document.getElementById('loginScreen').style.display = 'flex';
             document.getElementById('dashboard').style.display = 'none';
@@ -655,6 +675,9 @@
             nostrLoginSection.style.display = 'block';
             manualLoginSection.style.display = 'none';
             toggleManualLoginBtn.textContent = 'Manual pubkey login';
+            
+            // Refresh page to ensure clean state
+            window.location.reload();
         });
 
         // Tab switching
