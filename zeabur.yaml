@@ -1,0 +1,71 @@
+# Zeabur Deployment Configuration
+name: swarm-relay
+type: docker
+
+# Docker build configuration
+docker:
+  dockerfile: Dockerfile
+  context: .
+
+# Persistent volumes configuration
+volumes:
+  # Database volume (Badger)
+  - name: swarm-db
+    mountPath: /app/db
+    size: 1Gi
+    type: persistent
+    
+  # Blossom file storage volume
+  - name: swarm-blossom
+    mountPath: /app/blossom
+    size: 10Gi
+    type: persistent
+    
+  # Backup volume (optional but recommended)
+  - name: swarm-backups
+    mountPath: /app/backups
+    size: 5Gi
+    type: persistent
+
+# Service configuration
+service:
+  name: swarm-relay
+  port: 3334
+  healthCheck:
+    path: /
+    interval: 30s
+    timeout: 10s
+    retries: 3
+
+# Environment variables (can be overridden in Zeabur dashboard)
+env:
+  - name: RELAY_PORT
+    value: "3334"
+  - name: RELAY_NAME
+    value: "Swarm Relay"
+  - name: RELAY_PUBKEY
+    value: "8ad8f1f78c8e11966242e28a7ca15c936b23a999d5fb91bfe4e4472e2d6eaf55"
+  - name: RELAY_DESCRIPTION
+    value: "Team Nostr relay"
+  - name: DB_ENGINE
+    value: "badger"
+  - name: DB_PATH
+    value: "/app/db/"
+  - name: BLOSSOM_ENABLED
+    value: "true"
+  - name: BLOSSOM_PATH
+    value: "/app/blossom/"
+  - name: STORAGE_BACKEND
+    value: "filesystem"
+  - name: WEBSOCKET_URL
+    value: "ws://localhost:3334"
+  - name: NPUB_DOMAIN
+    value: "hivetalk.org"
+  - name: TEAM_DOMAIN
+    value: "swarm.hivetalk.org"
+
+# Auto-scaling (optional)
+scaling:
+  minInstances: 1
+  maxInstances: 2
+  targetCPU: 70

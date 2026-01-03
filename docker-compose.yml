@@ -57,7 +57,35 @@ services:
       - ./public:/app/public:ro
       - badger_data:/app/db
       - blossom_data:/app/blossom
+      - backup_data:/app/backups
+    # Zeabur-specific labels for automatic volume creation
+    labels:
+      zeabur.service.name: "swarm-relay"
+      zeabur.service.type: "docker"
+      zeabur.service.port: "3334"
+      zeabur.volume.badger_data.size: "1Gi"
+      zeabur.volume.badger_data.type: "persistent"
+      zeabur.volume.blossom_data.size: "10Gi"
+      zeabur.volume.blossom_data.type: "persistent"
+      zeabur.volume.backup_data.size: "5Gi"
+      zeabur.volume.backup_data.type: "persistent"
 
 volumes:
   badger_data:
+    labels:
+      zeabur.volume.name: "swarm-db"
+      zeabur.volume.mount-path: "/app/db"
+      zeabur.volume.size: "1Gi"
+      zeabur.volume.type: "persistent"
   blossom_data:
+    labels:
+      zeabur.volume.name: "swarm-blossom"
+      zeabur.volume.mount-path: "/app/blossom"
+      zeabur.volume.size: "10Gi"
+      zeabur.volume.type: "persistent"
+  backup_data:
+    labels:
+      zeabur.volume.name: "swarm-backups"
+      zeabur.volume.mount-path: "/app/backups"
+      zeabur.volume.size: "5Gi"
+      zeabur.volume.type: "persistent"
