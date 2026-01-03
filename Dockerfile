@@ -36,6 +36,9 @@ RUN go mod download
 # Copy the rest of the source
 COPY . .
 
+# Copy public files (including nostr.json backup)
+COPY public /app/public
+
 # Copy built bouquet from previous stage
 COPY --from=bouquet-builder /app/bouquet-dist ./bouquet-dist
 
@@ -69,8 +72,13 @@ RUN apk add --no-cache ca-certificates tzdata tar curl
 # Copy binary from builder
 COPY --from=go-builder /app/swarm /app/swarm
 
-# Copy public assets (for .well-known/nostr.json fallback)
+# Copy public files (including nostr.json)
 COPY --from=go-builder /app/public /app/public
+
+# Create backup of original nostr.json for volume initialization
+RUN if [ -f '/app/public/.well-known/nostr.json' ]; then \
+        cp /app/public/.well-known/nostr.json /app/public/.well-known/nostr.json.original; \
+    fi
 
 # Copy bouquet dist
 COPY --from=go-builder /app/bouquet-dist /app/bouquet-dist
@@ -136,6 +144,20 @@ EOF
 COPY <<'EOF' /app/start.sh
 #!/bin/sh
 # Startup script with backup/restore logic
+
+# Initialize NIP-05 volume if empty
+if [ ! -f '/app/public/.well-known/nostr.json' ]; then
+    echo 'Initializing NIP-05 volume with default nostr.json...'
+    mkdir -p /app/public/.well-known
+    # Copy from the original file in the image
+    if [ -f '/app/public/.well-known/nostr.json.original' ]; then
+        cp /app/public/.well-known/nostr.json.original /app/public/.well-known/nostr.json
+    else
+        # Create default if no original exists
+        echo '{"names":{}}' > /app/public/.well-known/nostr.json
+    fi
+    echo 'NIP-05 volume initialized'
+fi
 
 # Restore from backup if data directories are empty
 if [ ! -d '/app/db' ] || [ "$(ls -A /app/db 2>/dev/null)" = '' ]; then

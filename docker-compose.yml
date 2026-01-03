@@ -54,9 +54,10 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
     volumes:
-      - ./public:/app/public:ro
+      - ./public:/app/public
       - badger_data:/app/db
       - blossom_data:/app/blossom
+      - nip05_data:/app/public/.well-known
       - backup_data:/app/backups
     # Zeabur-specific labels for automatic volume creation
     labels:
@@ -69,6 +70,8 @@ services:
       zeabur.volume.blossom_data.type: "persistent"
       zeabur.volume.backup_data.size: "5Gi"
       zeabur.volume.backup_data.type: "persistent"
+      zeabur.volume.nip05_data.size: "100Mi"
+      zeabur.volume.nip05_data.type: "persistent"
 
 volumes:
   badger_data:
@@ -88,4 +91,10 @@ volumes:
       zeabur.volume.name: "swarm-backups"
       zeabur.volume.mount-path: "/app/backups"
       zeabur.volume.size: "5Gi"
+      zeabur.volume.type: "persistent"
+  nip05_data:
+    labels:
+      zeabur.volume.name: "swarm-nip05"
+      zeabur.volume.mount-path: "/app/public/.well-known"
+      zeabur.volume.size: "100Mi"
       zeabur.volume.type: "persistent"

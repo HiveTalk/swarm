@@ -101,8 +101,9 @@
                 <h3 class="text-lg font-semibold text-white mb-3">How it works</h3>
                 <ol class="list-decimal list-inside space-y-2 text-gray-400 text-sm">
                     <li>Enter your desired username and Nostr public key</li>
-                    <li>Submit the form to create a pull request</li>
-                    <li>Once approved and merged, your NIP-05 will be: <code class="text-purple-300">username@yourdomain.com</code></li>
+                    <li>Submit the form for instant activation</li>
+                    <li>Your NIP-05 identifier will be: <code class="text-purple-300">username@yourdomain.com</code></li>
+                    <li>Verification available immediately at <code class="text-purple-300">/.well-known/nostr.json</code></li>
                 </ol>
             </div>
         </div>
@@ -306,7 +307,7 @@
                 // Validate pubkey format (will be converted server-side too)
                 const hexPubkey = convertToHex(pubkeyRaw);
 
-                // Submit to Cloudflare Worker
+                // Submit to local API
                 const response = await fetch(WORKER_URL, {
                     method: 'POST',
                     headers: {
@@ -324,16 +325,13 @@
                     throw new Error(result.error || 'Failed to submit request');
                 }
 
-                // Get PR URL from API response or use default
-                const prUrl = result.pr_url || 'https://github.com/bitkarrot/nip05-service/pulls';
-                
+                // Display success message with new API response format
                 successMessage.innerHTML = `
                     <strong>Success!</strong> ${result.message}<br><br>
-                    A pull request will be created automatically. Check the 
-                    <a href="${prUrl}" target="_blank" class="underline text-green-200 hover:text-white">
-                        Pull Requests page
-                    </a> in a few moments.<br><br>
-                    Once merged, your NIP-05 identifier will be active.
+                    Your NIP-05 identifier is now: <code class="text-green-200">${result.nip05}</code><br><br>
+                    You can verify it by visiting <a href="/.well-known/nostr.json" target="_blank" class="underline text-green-200 hover:text-white">
+                        /.well-known/nostr.json
+                    </a>
                 `;
                 successMessage.classList.remove('hidden');
                 form.reset();

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -1139,54 +1140,20 @@ func setupNIP05Handlers(relay *khatru.Relay, config Config) {
 			return
 		}
 
-		// Get GitHub configuration from environment
-		githubToken := os.Getenv("GITHUB_TOKEN")
-		githubOwner := getEnvWithDefault("GITHUB_OWNER", "bitkarrot")
-		githubRepo := getEnvWithDefault("GITHUB_REPO", "nip05-service")
-
-		if githubToken == "" {
-			returnError("Server configuration error", http.StatusInternalServerError)
-			return
-		}
-
-		// Trigger GitHub repository_dispatch event
-		payload := map[string]interface{}{
-			"event_type": "add-nip05",
-			"client_payload": map[string]string{
-				"username": username,
-				"pubkey":   hexPubkey,
-			},
-		}
-
-		payloadBytes, err := json.Marshal(payload)
+		// Update nostr.json file directly in persistent volume
+		err = updateNostrJson(username, hexPubkey)
 		if err != nil {
-			returnError("Internal server error", http.StatusInternalServerError)
-			return
-		}
-
-		resp, err := http.Post(
-			fmt.Sprintf("https://api.github.com/repos/%s/%s/dispatches", githubOwner, githubRepo),
-			"application/vnd.github.v3+json",
-			bytes.NewBuffer(payloadBytes),
-		)
-		if err != nil {
-			returnError("Failed to submit request", http.StatusInternalServerError)
-			return
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusCreated {
-			returnError("Failed to submit request", http.StatusInternalServerError)
+			returnError(fmt.Sprintf("Failed to update nostr.json: %s", err.Error()), http.StatusInternalServerError)
 			return
 		}
 
 		// Return success response
 		response := map[string]interface{}{
 			"success":  true,
-			"message":  fmt.Sprintf("Request submitted! A pull request will be created for %s", username),
+			"message":  fmt.Sprintf("NIP-05 identifier %s@%s has been successfully registered!", username, config.NPUBDomain),
 			"username": username,
 			"pubkey":   hexPubkey,
-			"pr_url":   fmt.Sprintf("https://github.com/%s/%s/pulls", githubOwner, githubRepo),
+			"nip05":    fmt.Sprintf("%s@%s", username, config.NPUBDomain),
 		}
 
 		json.NewEncoder(w).Encode(response)
@@ -1304,4 +1271,77 @@ func convertBits(data []byte, fromBits, toBits uint, pad bool) ([]byte, error) {
 	}
 
 	return result, nil
+}
+
+// updateNostrJson updates the nostr.json file in persistent volume
+func updateNostrJson(username, pubkey string) error {
+	nostrJsonPath := "/app/public/.well-known/nostr.json"
+
+	// Read existing file
+	var nostrData map[string]interface{}
+
+	// Create file if it doesn't exist
+	if _, err := os.Stat(nostrJsonPath); os.IsNotExist(err) {
+		// Create directory if needed
+		if err := os.MkdirAll(filepath.Dir(nostrJsonPath), 0755); err != nil {
+			return fmt.Errorf("failed to create directory: %s", err)
+		}
+
+		// Initialize with empty structure
+		nostrData = map[string]interface{}{
+			"names": map[string]interface{}{},
+		}
+	} else {
+		// Read existing file
+		data, err := os.ReadFile(nostrJsonPath)
+		if err != nil {
+			return fmt.Errorf("failed to read nostr.json: %s", err)
+		}
+
+		if err := json.Unmarshal(data, &nostrData); err != nil {
+			return fmt.Errorf("failed to parse nostr.json: %s", err)
+		}
+	}
+
+	// Ensure names object exists
+	if nostrData["names"] == nil {
+		nostrData["names"] = map[string]interface{}{}
+	}
+
+	names, ok := nostrData["names"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid nostr.json structure: names is not an object")
+	}
+
+	// Check if username already exists
+	if existingPubkey, exists := names[username]; exists {
+		if existingPubkey == pubkey {
+			return fmt.Errorf("username %s is already registered with this pubkey", username)
+		}
+		return fmt.Errorf("username %s is already registered with a different pubkey", username)
+	}
+
+	// Check if pubkey is already used by another username
+	for existingUser, existingPubkey := range names {
+		if existingPubkey == pubkey {
+			return fmt.Errorf("pubkey is already registered to username %s", existingUser)
+		}
+	}
+
+	// Add new entry
+	names[username] = pubkey
+	nostrData["names"] = names
+
+	// Write back to file
+	updatedData, err := json.MarshalIndent(nostrData, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal nostr.json: %s", err)
+	}
+
+	if err := os.WriteFile(nostrJsonPath, updatedData, 0644); err != nil {
+		return fmt.Errorf("failed to write nostr.json: %s", err)
+	}
+
+	log.Printf("Successfully added NIP-05 entry: %s -> %s", username, pubkey)
+	return nil
 }
