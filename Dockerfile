@@ -49,8 +49,8 @@ LABEL "language"="go"
 
 WORKDIR /app
 
-# Install runtime dependencies (CA certs for HTTPS, timezone data)
-RUN apk add --no-cache ca-certificates tzdata
+# Install runtime dependencies (CA certs for HTTPS, timezone data, backup tools)
+RUN apk add --no-cache ca-certificates tzdata tar curl
 
 # Copy binary from builder
 COPY --from=go-builder /app/swarm /app/swarm
@@ -60,6 +60,89 @@ COPY --from=go-builder /app/public /app/public
 
 # Copy bouquet dist
 COPY --from=go-builder /app/bouquet-dist /app/bouquet-dist
+
+# Create backup script
+COPY <<'EOF' /app/backup.sh
+#!/bin/sh
+# Backup script for Swarm relay data
+BACKUP_DIR="/app/backups"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+
+mkdir -p "$BACKUP_DIR"
+
+# Backup database if it exists and has content
+if [ -d "/app/db" ] && [ "$(ls -A /app/db 2>/dev/null)" ]; then
+    echo "Backing up database..."
+    tar -czf "$BACKUP_DIR/db_backup_$TIMESTAMP.tar.gz" -C /app db/
+fi
+
+# Backup blossom files if they exist and have content
+if [ -d "/app/blossom" ] && [ "$(ls -A /app/blossom 2>/dev/null)" ]; then
+    echo "Backing up blossom files..."
+    tar -czf "$BACKUP_DIR/blossom_backup_$TIMESTAMP.tar.gz" -C /app blossom/
+fi
+
+# Keep only last 5 backups
+find "$BACKUP_DIR" -name "*.tar.gz" -type f | sort -r | tail -n +6 | xargs -r rm
+
+echo "Backup completed: $TIMESTAMP"
+EOF
+
+# Create restore script
+COPY <<'EOF' /app/restore.sh
+#!/bin/sh
+# Restore script for Swarm relay data
+BACKUP_DIR="/app/backups"
+
+if [ ! -d "$BACKUP_DIR" ]; then
+    echo "No backup directory found"
+    exit 1
+fi
+
+# Restore latest database backup
+LATEST_DB=$(find "$BACKUP_DIR" -name "db_backup_*.tar.gz" -type f | sort -r | head -n 1)
+if [ -n "$LATEST_DB" ]; then
+    echo "Restoring database from: $LATEST_DB"
+    mkdir -p /app/db
+    tar -xzf "$LATEST_DB" -C /app/
+fi
+
+# Restore latest blossom backup
+LATEST_BLOSSOM=$(find "$BACKUP_DIR" -name "blossom_backup_*.tar.gz" -type f | sort -r | head -n 1)
+if [ -n "$LATEST_BLOSSOM" ]; then
+    echo "Restoring blossom files from: $LATEST_BLOSSOM"
+    mkdir -p /app/blossom
+    tar -xzf "$LATEST_BLOSSOM" -C /app/
+fi
+
+echo "Restore completed"
+EOF
+
+# Create startup script
+COPY <<'EOF' /app/start.sh
+#!/bin/sh
+# Startup script with backup/restore logic
+
+# Restore from backup if data directories are empty
+if [ ! -d '/app/db' ] || [ "$(ls -A /app/db 2>/dev/null)" = '' ]; then
+    echo 'Database directory empty, attempting restore...'
+    /app/restore.sh
+fi
+
+if [ ! -d '/app/blossom' ] || [ "$(ls -A /app/blossom 2>/dev/null)" = '' ]; then
+    echo 'Blossom directory empty, attempting restore...'
+    /app/restore.sh
+fi
+
+# Start the relay
+exec /app/swarm
+EOF
+
+# Make scripts executable
+RUN chmod +x /app/backup.sh /app/restore.sh /app/start.sh
+
+# Create data directories
+RUN mkdir -p /app/db /app/blossom /app/backups
 
 EXPOSE 3334
 
@@ -84,5 +167,9 @@ ENV S3_REGION=auto
 ENV S3_PUBLIC_URL=""
 # AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY should be set via secrets, not in Dockerfile
 
-# Entrypoint simply runs the relay; configure via env vars
-ENTRYPOINT ["/app/swarm"]
+# Add health check and backup on startup
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:${RELAY_PORT:-3334}/ || exit 1
+
+# Use startup script as entrypoint
+ENTRYPOINT ["/app/start.sh"]
