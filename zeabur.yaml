@@ -27,7 +27,7 @@ volumes:
   # NIP-05 volume (always created for persistent nostr.json)
   - name: swarm-nip05
     mountPath: /app/public/.well-known
-    size: 100Mi
+    size: 1Mi
     type: persistent
     
   # Backup volume (always created for backup rotation)
