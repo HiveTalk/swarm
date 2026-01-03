@@ -566,16 +566,32 @@ func fetchNostrData(npubDomain string) {
 		log.Println("Using local public/.well-known/nostr.json")
 	} else {
 		// Fetch from remote domain
-		response, err := http.Get("https://" + npubDomain + "/public/.well-known/nostr.json")
+		response, err := http.Get("https://" + npubDomain + "/.well-known/nostr.json")
 		if err != nil {
 			log.Printf("Error getting well known file: %v", err)
 			return
 		}
 		defer response.Body.Close()
 
+		// Check if response is successful
+		if response.StatusCode != http.StatusOK {
+			log.Printf("HTTP error fetching nostr.json: %s", response.Status)
+			return
+		}
+
 		body, err = io.ReadAll(response.Body)
 		if err != nil {
 			log.Printf("Error reading response body: %v", err)
+			return
+		}
+
+		// Check if response looks like JSON (basic validation)
+		if len(body) == 0 || body[0] != '{' {
+			preview := string(body)
+			if len(preview) > 100 {
+				preview = preview[:100] + "..."
+			}
+			log.Printf("Invalid response from %s - not JSON: %s", npubDomain, preview)
 			return
 		}
 	}
