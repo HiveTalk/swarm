@@ -1275,7 +1275,13 @@ func convertBits(data []byte, fromBits, toBits uint, pad bool) ([]byte, error) {
 
 // updateNostrJson updates the nostr.json file in persistent volume
 func updateNostrJson(username, pubkey string) error {
-	nostrJsonPath := "/app/public/.well-known/nostr.json"
+	// Use environment variable or default to local path
+	nostrJsonPath := getEnvWithDefault("NIP05_PATH", "public/.well-known/nostr.json")
+
+	// If running in Docker, convert relative path to absolute
+	if !filepath.IsAbs(nostrJsonPath) && os.Getenv("DOCKER_ENV") == "true" {
+		nostrJsonPath = "/app/" + nostrJsonPath
+	}
 
 	// Read existing file
 	var nostrData map[string]interface{}
