@@ -7,21 +7,24 @@ docker:
   dockerfile: Dockerfile
   context: .
 
-# Persistent volumes configuration
+# Conditionally create volumes based on environment
+# These volumes are only created if the corresponding env vars are set
 volumes:
-  # Database volume (Badger)
+  # Database volume (only created if DB_ENGINE=badger)
   - name: swarm-db
     mountPath: /app/db
     size: 1Gi
     type: persistent
+    condition: ${DB_ENGINE:-badger} == "badger"
     
-  # Blossom file storage volume
+  # Blossom file storage volume (only created if STORAGE_BACKEND=filesystem)
   - name: swarm-blossom
     mountPath: /app/blossom
     size: 10Gi
     type: persistent
+    condition: ${STORAGE_BACKEND:-filesystem} == "filesystem"
     
-  # Backup volume (optional but recommended)
+  # Backup volume (always created for backup rotation)
   - name: swarm-backups
     mountPath: /app/backups
     size: 5Gi
@@ -39,6 +42,17 @@ service:
 
 # Environment variables (can be overridden in Zeabur dashboard)
 env:
+  # Default configuration (uses automatic volumes)
+  - name: DB_ENGINE
+    value: "badger"
+  - name: DB_PATH
+    value: "/app/db/"
+  - name: STORAGE_BACKEND
+    value: "filesystem"
+  - name: BLOSSOM_PATH
+    value: "/app/blossom/"
+  
+  # Core relay settings
   - name: RELAY_PORT
     value: "3334"
   - name: RELAY_NAME
@@ -47,22 +61,26 @@ env:
     value: "8ad8f1f78c8e11966242e28a7ca15c936b23a999d5fb91bfe4e4472e2d6eaf55"
   - name: RELAY_DESCRIPTION
     value: "Team Nostr relay"
-  - name: DB_ENGINE
-    value: "badger"
-  - name: DB_PATH
-    value: "/app/db/"
   - name: BLOSSOM_ENABLED
     value: "true"
-  - name: BLOSSOM_PATH
-    value: "/app/blossom/"
-  - name: STORAGE_BACKEND
-    value: "filesystem"
   - name: WEBSOCKET_URL
     value: "ws://localhost:3334"
   - name: NPUB_DOMAIN
     value: "hivetalk.org"
   - name: TEAM_DOMAIN
     value: "swarm.hivetalk.org"
+  
+  # External service placeholders (uncomment to use)
+  # - name: DATABASE_URL
+  #   value: "postgresql://user:pass@host:port/dbname"
+  # - name: S3_ENDPOINT
+  #   value: "https://s3.amazonaws.com"
+  # - name: S3_BUCKET
+  #   value: "your-bucket"
+  # - name: AWS_ACCESS_KEY_ID
+  #   value: "your-access-key"
+  # - name: AWS_SECRET_ACCESS_KEY
+  #   value: "your-secret-key"
 
 # Auto-scaling (optional)
 scaling:
