@@ -200,6 +200,9 @@ func main() {
 	// Setup front page handler
 	setupFrontPageHandler(relay, config)
 
+	// Setup dashboard handlers
+	setupDashboardHandlers(relay, config)
+
 	// Add handler for all public assets
 	relay.Router().HandleFunc("/public/", func(w http.ResponseWriter, r *http.Request) {
 		// Get the requested file path (remove /public/ prefix)
@@ -1427,4 +1430,478 @@ func initializeNostrJson(config Config) error {
 
 	log.Printf("Initialized nostr.json with root entry: _ -> %s", config.RelayPubkey)
 	return nil
+}
+
+// setupDashboardHandlers adds all the API endpoints for the dashboard
+func setupDashboardHandlers(relay *khatru.Relay, config Config) {
+	// Serve dashboard HTML
+	relay.Router().HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		http.ServeFile(w, r, "./public/dashboard.html")
+	})
+
+	// API: Login endpoint
+	relay.Router().HandleFunc("/api/dashboard/login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			Pubkey string `json:"pubkey"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		// Validate pubkey against config
+		if req.Pubkey != config.RelayPubkey {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid pubkey"})
+			return
+		}
+
+		// Return dashboard data
+		response := map[string]interface{}{
+			"relayName":        config.RelayName,
+			"relayDescription": config.RelayDescription,
+			"users":            data.Names,
+			"environment":      getEnvironmentVars(),
+			"isRemote":         config.NPUBDomain != "",
+			"npubDomain":       config.NPUBDomain,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	})
+
+	// API: Users endpoint (GET for list, POST for add)
+	relay.Router().HandleFunc("/api/dashboard/users", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			response := map[string]interface{}{
+				"users":      data.Names,
+				"isRemote":   config.NPUBDomain != "",
+				"npubDomain": config.NPUBDomain,
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(response)
+
+		case "POST":
+			// Only allow if using local nostr.json
+			if config.NPUBDomain != "" {
+				http.Error(w, "Cannot modify users when using remote nostr.json", http.StatusForbidden)
+				return
+			}
+
+			var req struct {
+				Name   string `json:"name"`
+				Pubkey string `json:"pubkey"`
+			}
+
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Invalid JSON", http.StatusBadRequest)
+				return
+			}
+
+			// Validate inputs
+			if req.Name == "" || req.Pubkey == "" {
+				http.Error(w, "Name and pubkey are required", http.StatusBadRequest)
+				return
+			}
+
+			// Validate pubkey format (64 hex chars)
+			if len(req.Pubkey) != 64 || !isValidHex(req.Pubkey) {
+				http.Error(w, "Invalid pubkey format", http.StatusBadRequest)
+				return
+			}
+
+			// Add user to local nostr.json
+			if err := addOrUpdateUser(req.Name, req.Pubkey); err != nil {
+				http.Error(w, "Failed to add user: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			// Refresh data
+			fetchNostrData("")
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	})
+
+	// API: Individual user operations (PUT for update, DELETE for delete)
+	relay.Router().HandleFunc("/api/dashboard/user/", func(w http.ResponseWriter, r *http.Request) {
+		// Only allow if using local nostr.json
+		if config.NPUBDomain != "" {
+			http.Error(w, "Cannot modify users when using remote nostr.json", http.StatusForbidden)
+			return
+		}
+
+		// Extract pubkey from URL
+		pubkey := strings.TrimPrefix(r.URL.Path, "/api/dashboard/user/")
+		if pubkey == "" {
+			http.Error(w, "Missing pubkey", http.StatusBadRequest)
+			return
+		}
+
+		switch r.Method {
+		case "PUT":
+			var req struct {
+				Name string `json:"name"`
+			}
+
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Invalid JSON", http.StatusBadRequest)
+				return
+			}
+
+			if req.Name == "" {
+				http.Error(w, "Name is required", http.StatusBadRequest)
+				return
+			}
+
+			// Update user in local nostr.json
+			if err := addOrUpdateUser(req.Name, pubkey); err != nil {
+				http.Error(w, "Failed to update user: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+		case "DELETE":
+			// Don't allow deleting the root entry
+			if pubkey == config.RelayPubkey {
+				http.Error(w, "Cannot delete root entry", http.StatusForbidden)
+				return
+			}
+
+			// Delete user from local nostr.json
+			if err := deleteUser(pubkey); err != nil {
+				http.Error(w, "Failed to delete user: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Refresh data
+		fetchNostrData("")
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+	})
+
+	// API: Get environment variables
+	relay.Router().HandleFunc("/api/dashboard/environment", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		response := map[string]interface{}{
+			"environment": getEnvironmentVars(),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	})
+
+	// API: Convert pubkey
+	relay.Router().HandleFunc("/api/dashboard/convert", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			Input string `json:"input"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		var result map[string]interface{}
+		if strings.HasPrefix(req.Input, "npub1") {
+			// Convert npub to hex
+			hex, err := npubToHex(req.Input)
+			if err != nil {
+				result = map[string]interface{}{"error": "Invalid npub format: " + err.Error()}
+			} else {
+				result = map[string]interface{}{"hex": hex}
+			}
+		} else if len(req.Input) == 64 && isValidHex(req.Input) {
+			// Convert hex to npub
+			npub, err := hexToNpub(req.Input)
+			if err != nil {
+				result = map[string]interface{}{"error": "Invalid hex format: " + err.Error()}
+			} else {
+				result = map[string]interface{}{"npub": npub}
+			}
+		} else {
+			result = map[string]interface{}{"error": "Invalid pubkey format. Expected 64-char hex or npub1..."}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
+	})
+}
+
+// getEnvironmentVars returns a map of environment variables (excluding sensitive ones)
+func getEnvironmentVars() map[string]string {
+	envVars := make(map[string]string)
+
+	// List of environment variables to show (excluding sensitive ones)
+	showVars := []string{
+		"RELAY_NAME", "RELAY_PUBKEY", "RELAY_DESCRIPTION",
+		"TEAM_DOMAIN", "NPUB_DOMAIN", "DB_ENGINE", "DB_PATH",
+		"POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DB",
+		"DATABASE_URL", "BLOSSOM_ENABLED", "BLOSSOM_PATH",
+		"BLOSSOM_URL", "WEBSOCKET_URL", "ALLOWED_KINDS",
+		"PUBLIC_ALLOWED_KINDS", "TRUSTED_CLIENT_NAME", "TRUSTED_CLIENT_KINDS",
+		"MAX_UPLOAD_SIZE_MB", "RELAY_PORT", "ALLOWED_MIRROR_HOSTS",
+		"STORAGE_BACKEND", "S3_ENDPOINT", "S3_BUCKET", "S3_REGION",
+		"S3_PUBLIC_URL", "NIP05_PATH",
+	}
+
+	for _, varName := range showVars {
+		value := os.Getenv(varName)
+		if value != "" {
+			// Mask sensitive values
+			if strings.Contains(strings.ToLower(varName), "password") ||
+				strings.Contains(strings.ToLower(varName), "secret") ||
+				strings.Contains(strings.ToLower(varName), "key") {
+				envVars[varName] = "***MASKED***"
+			} else {
+				envVars[varName] = value
+			}
+		} else {
+			envVars[varName] = ""
+		}
+	}
+
+	return envVars
+}
+
+// addOrUpdateUser adds or updates a user in the local nostr.json
+func addOrUpdateUser(name, pubkey string) error {
+	nostrJsonPath := "./public/.well-known/nostr.json"
+
+	// Read existing file
+	var nostrData map[string]interface{}
+	if body, err := os.ReadFile(nostrJsonPath); err == nil {
+		if err := json.Unmarshal(body, &nostrData); err != nil {
+			return fmt.Errorf("failed to parse existing nostr.json: %s", err)
+		}
+	} else {
+		// Create new structure if file doesn't exist
+		nostrData = map[string]interface{}{
+			"names": map[string]interface{}{},
+		}
+	}
+
+	// Ensure names map exists
+	names, ok := nostrData["names"].(map[string]interface{})
+	if !ok {
+		names = map[string]interface{}{}
+		nostrData["names"] = names
+	}
+
+	// Add or update user
+	names[name] = pubkey
+
+	// Write back to file
+	updatedData, err := json.MarshalIndent(nostrData, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal nostr.json: %s", err)
+	}
+
+	if err := os.WriteFile(nostrJsonPath, updatedData, 0644); err != nil {
+		return fmt.Errorf("failed to write nostr.json: %s", err)
+	}
+
+	log.Printf("Added/updated user: %s -> %s", name, pubkey)
+	return nil
+}
+
+// deleteUser removes a user from the local nostr.json
+func deleteUser(pubkey string) error {
+	nostrJsonPath := "./public/.well-known/nostr.json"
+
+	// Read existing file
+	var nostrData map[string]interface{}
+	body, err := os.ReadFile(nostrJsonPath)
+	if err != nil {
+		return fmt.Errorf("failed to read nostr.json: %s", err)
+	}
+
+	if err := json.Unmarshal(body, &nostrData); err != nil {
+		return fmt.Errorf("failed to parse nostr.json: %s", err)
+	}
+
+	// Get names map
+	names, ok := nostrData["names"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid nostr.json structure")
+	}
+
+	// Find and remove user with matching pubkey
+	var userToDelete string
+	for name, pk := range names {
+		if pk == pubkey {
+			userToDelete = name
+			break
+		}
+	}
+
+	if userToDelete == "" {
+		return fmt.Errorf("user not found")
+	}
+
+	delete(names, userToDelete)
+
+	// Write back to file
+	updatedData, err := json.MarshalIndent(nostrData, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal nostr.json: %s", err)
+	}
+
+	if err := os.WriteFile(nostrJsonPath, updatedData, 0644); err != nil {
+		return fmt.Errorf("failed to write nostr.json: %s", err)
+	}
+
+	log.Printf("Deleted user: %s", userToDelete)
+	return nil
+}
+
+// npubToHex converts npub format to hex using bech32 decoding
+func npubToHex(npub string) (string, error) {
+	if len(npub) < 5 || !strings.HasPrefix(npub, "npub1") {
+		return "", fmt.Errorf("invalid npub format: must start with npub1")
+	}
+
+	// Simple bech32 validation and decoding
+	// This is a simplified implementation - in production you'd use a proper bech32 library
+	const alphabet = "023456789acdefghjklmnpqrstuvwxyz"
+
+	// Remove prefix and convert to lowercase
+	encoded := strings.ToLower(npub[5:])
+
+	// Validate characters
+	for _, c := range encoded {
+		if !strings.ContainsRune(alphabet, c) {
+			return "", fmt.Errorf("invalid character in npub")
+		}
+	}
+
+	// Convert to 5-bit groups
+	var data []byte
+	for _, c := range encoded {
+		index := strings.IndexRune(alphabet, c)
+		if index == -1 {
+			return "", fmt.Errorf("invalid character in npub")
+		}
+
+		// Convert to 5 bits
+		for i := 4; i >= 0; i-- {
+			bit := byte((index >> uint(i)) & 1)
+			data = appendBits(data, bit)
+		}
+	}
+
+	// Remove checksum (last 6 bits = checksum)
+	if len(data) < 6 {
+		return "", fmt.Errorf("npub too short")
+	}
+	data = data[:len(data)-6]
+
+	// Convert bits to bytes
+	var bytes []byte
+	for i := 0; i < len(data); i += 8 {
+		if i+8 <= len(data) {
+			var b byte
+			for j := 0; j < 8; j++ {
+				if i+j < len(data) {
+					b |= data[i+j] << uint(7-j)
+				}
+			}
+			bytes = append(bytes, b)
+		}
+	}
+
+	if len(bytes) < 32 {
+		return "", fmt.Errorf("decoded data too short")
+	}
+
+	return hex.EncodeToString(bytes[:32]), nil
+}
+
+// appendBits appends a bit to a byte slice
+func appendBits(data []byte, bit byte) []byte {
+	byteIndex := len(data) / 8
+	bitIndex := len(data) % 8
+
+	if bitIndex == 0 {
+		data = append(data, 0)
+	}
+
+	data[byteIndex] |= bit << uint(7-bitIndex)
+	return data
+}
+
+// hexToNpub converts hex to npub format using bech32 encoding
+func hexToNpub(hexStr string) (string, error) {
+	if len(hexStr) != 64 || !isValidHex(hexStr) {
+		return "", fmt.Errorf("invalid hex format")
+	}
+
+	// Decode hex to bytes
+	decoded, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode hex: %s", err)
+	}
+
+	// Take first 32 bytes
+	if len(decoded) > 32 {
+		decoded = decoded[:32]
+	}
+
+	// Convert bytes to 5-bit groups
+	var bits []byte
+	for _, b := range decoded {
+		for i := 7; i >= 0; i-- {
+			bit := (b >> uint(i)) & 1
+			bits = append(bits, bit)
+		}
+	}
+
+	// Convert to base32
+	const alphabet = "023456789acdefghjklmnpqrstuvwxyz"
+	var encoded string
+	for i := 0; i < len(bits); i += 5 {
+		if i+5 <= len(bits) {
+			value := byte(0)
+			for j := 0; j < 5; j++ {
+				if i+j < len(bits) {
+					value |= bits[i+j] << uint(4-j)
+				}
+			}
+			if int(value) < len(alphabet) {
+				encoded += string(alphabet[value])
+			}
+		}
+	}
+
+	return "npub1" + encoded, nil
 }
