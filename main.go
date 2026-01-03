@@ -79,6 +79,11 @@ func main() {
 	relay = khatru.NewRelay()
 	config := LoadConfig()
 
+	// Initialize nostr.json with relay pubkey as root if needed
+	if err := initializeNostrJson(config); err != nil {
+		log.Printf("Warning: Failed to initialize nostr.json: %s", err)
+	}
+
 	relay.StoreEvent = append(relay.StoreEvent, db.SaveEvent)
 	relay.QueryEvents = append(relay.QueryEvents, db.QueryEvents)
 	relay.DeleteEvent = append(relay.DeleteEvent, db.DeleteEvent)
@@ -1365,5 +1370,61 @@ func updateNostrJson(username, pubkey string) error {
 	}
 
 	log.Printf("Successfully added NIP-05 entry: %s -> %s", username, pubkey)
+	return nil
+}
+
+// initializeNostrJson creates nostr.json with relay pubkey as root if it doesn't exist
+func initializeNostrJson(config Config) error {
+	nostrJsonPath := getEnvWithDefault("NIP05_PATH", "public/.well-known/nostr.json")
+
+	// If running in Docker, convert relative path to absolute
+	if !filepath.IsAbs(nostrJsonPath) && os.Getenv("DOCKER_ENV") == "true" {
+		nostrJsonPath = "/app/" + nostrJsonPath
+	}
+
+	// Check if file already exists
+	if _, err := os.Stat(nostrJsonPath); err == nil {
+		// File exists, check if it has root entry
+		data, err := os.ReadFile(nostrJsonPath)
+		if err != nil {
+			return fmt.Errorf("failed to read existing nostr.json: %s", err)
+		}
+
+		var nostrData map[string]interface{}
+		if err := json.Unmarshal(data, &nostrData); err != nil {
+			return fmt.Errorf("failed to parse existing nostr.json: %s", err)
+		}
+
+		// Check if root entry exists
+		if names, ok := nostrData["names"].(map[string]interface{}); ok {
+			if _, hasRoot := names["_"]; hasRoot {
+				log.Println("Root entry already exists in nostr.json")
+				return nil
+			}
+		}
+	}
+
+	// Create directory if needed
+	if err := os.MkdirAll(filepath.Dir(nostrJsonPath), 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %s", err)
+	}
+
+	// Create nostr.json with relay pubkey as root
+	nostrData := map[string]interface{}{
+		"names": map[string]interface{}{
+			"_": config.RelayPubkey,
+		},
+	}
+
+	updatedData, err := json.MarshalIndent(nostrData, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal nostr.json: %s", err)
+	}
+
+	if err := os.WriteFile(nostrJsonPath, updatedData, 0644); err != nil {
+		return fmt.Errorf("failed to write nostr.json: %s", err)
+	}
+
+	log.Printf("Initialized nostr.json with root entry: _ -> %s", config.RelayPubkey)
 	return nil
 }

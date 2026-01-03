@@ -24,10 +24,10 @@ volumes:
     type: persistent
     condition: ${STORAGE_BACKEND:-filesystem} == "filesystem"
     
-  # NIP-05 volume (always created for persistent nostr.json)
-  - name: swarm-nip05
-    mountPath: /app/public/.well-known
-    size: 1Mi
+  # Public directory volume (always created for static files + NIP-05)
+  - name: swarm-public
+    mountPath: /app/public
+    size: 100Mi
     type: persistent
     
   # Backup volume (always created for backup rotation)
