@@ -406,7 +406,7 @@ func setupFrontPageHandler(relay *khatru.Relay, config Config) {
 			BlossomEnabled:   config.BlossomEnabled,
 			MaxUploadSizeMB:  config.MaxUploadSizeMB,
 			WebSocketURL:     *config.WebSocketURL,
-			WellKnownURL:     "https://" + config.NPUBDomain + "/.well-known/nostr.json",
+			WellKnownURL:     "https://" + config.NPUBDomain + "/public/.well-known/nostr.json",
 		}
 
 		if config.BlossomURL != nil {

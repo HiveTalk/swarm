@@ -103,7 +103,7 @@
                     <li>Enter your desired username and Nostr public key</li>
                     <li>Submit the form for instant activation</li>
                     <li>Your NIP-05 identifier will be: <code class="text-purple-300">username@yourdomain.com</code></li>
-                    <li>Verification available immediately at <code class="text-purple-300">/.well-known/nostr.json</code></li>
+                    <li>Verification available immediately at <code class="text-purple-300">/public/.well-known/nostr.json</code></li>
                 </ol>
             </div>
         </div>
@@ -328,8 +328,8 @@
                 successMessage.innerHTML = `
                     <strong>Success!</strong> ${result.message}<br><br>
                     Your NIP-05 identifier is now: <code class="text-green-200">${result.nip05}</code><br><br>
-                    You can verify it by visiting <a href="/.well-known/nostr.json" target="_blank" class="underline text-green-200 hover:text-white">
-                        /.well-known/nostr.json
+                    You can verify it by visiting <a href="/public/.well-known/nostr.json" target="_blank" class="underline text-green-200 hover:text-white">
+                        /public/.well-known/nostr.json
                     </a>
                 `;
                 successMessage.classList.remove('hidden');
