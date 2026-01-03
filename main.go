@@ -566,7 +566,7 @@ func fetchNostrData(npubDomain string) {
 		log.Println("Using local public/.well-known/nostr.json")
 	} else {
 		// Fetch from remote domain
-		response, err := http.Get("https://" + npubDomain + "/.well-known/nostr.json")
+		response, err := http.Get("https://" + npubDomain + "/public/.well-known/nostr.json")
 		if err != nil {
 			log.Printf("Error getting well known file: %v", err)
 			return
