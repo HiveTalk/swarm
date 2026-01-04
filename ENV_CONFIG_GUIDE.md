@@ -14,7 +14,7 @@ RELAY_NAME="My Relay"
 **Default behavior with minimum config:**
 - Database: Badger (local file storage)
 - Storage: Filesystem (local)
-- Blossom: Disabled
+- Blossom: Enabled
 - Port: 3334
 - Environment: Local development
 
