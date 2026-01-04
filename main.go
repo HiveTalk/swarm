@@ -1459,12 +1459,37 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 			return
 		}
 
-		// Validate pubkey against config
-		if req.Pubkey != config.RelayPubkey {
+		// Find the "_" user in nostr.json
+		adminPubkey := ""
+		for name, pk := range data.Names {
+			if name == "_" {
+				adminPubkey = pk
+				break
+			}
+		}
+
+		// Fallback to config.RelayPubkey if "_" not found (for safety/backward compatibility)
+		if adminPubkey == "" {
+			adminPubkey = config.RelayPubkey
+		}
+
+		// Validate pubkey against admin pubkey
+		if req.Pubkey != adminPubkey {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid pubkey"})
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Access denied. Only the relay operator ('_' in nostr.json) can login."})
 			return
 		}
+
+		// Set a simple session cookie for the UI endpoint
+		http.SetCookie(w, &http.Cookie{
+			Name:     "dashboard_session",
+			Value:    req.Pubkey,
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   3600, // 1 hour
+		})
 
 		// Return dashboard data
 		response := map[string]interface{}{
@@ -1478,6 +1503,54 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
+	})
+
+	// API: Get dashboard UI
+	relay.Router().HandleFunc("/api/dashboard/ui", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Check session cookie
+		cookie, err := r.Cookie("dashboard_session")
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// Verify cookie value matches admin pubkey
+		adminPubkey := ""
+		for name, pk := range data.Names {
+			if name == "_" {
+				adminPubkey = pk
+				break
+			}
+		}
+		if adminPubkey == "" {
+			adminPubkey = config.RelayPubkey
+		}
+
+		if cookie.Value != adminPubkey {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		http.ServeFile(w, r, "./templates/dashboard_view.html")
+	})
+
+	// API: Logout endpoint
+	relay.Router().HandleFunc("/api/dashboard/logout", func(w http.ResponseWriter, r *http.Request) {
+		// Clear session cookie
+		http.SetCookie(w, &http.Cookie{
+			Name:     "dashboard_session",
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			MaxAge:   -1,
+		})
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 	})
 
 	// API: Users endpoint (GET for list, POST for add)
