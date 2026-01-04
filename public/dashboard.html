@@ -136,33 +136,8 @@
                 <p style="margin-top: 1rem; text-align: center; color: #718096; font-size: 0.9rem;">
                     Requires relay operator pubkey access
                 </p>
+                <div id="loginError" class="error" style="text-align: center; margin-top: 1rem;"></div>
             </div>
-
-            <!-- Manual pubkey fallback (hidden by default) -->
-            <div id="manualLoginSection" style="display: none;">
-                <p style="margin-bottom: 1rem; text-align: center; color: #718096; font-size: 0.9rem;">
-                    Or enter your relay pubkey manually:
-                </p>
-                <form id="loginForm">
-                    <div class="form-group">
-                        <label for="pubkey">Relay Pubkey</label>
-                        <input type="password" id="pubkey" name="pubkey" required placeholder="Enter relay pubkey...">
-                    </div>
-                    <button type="submit" class="btn">Login</button>
-                    <div id="loginError" class="error"></div>
-                </form>
-            </div>
-
-            <!-- Toggle manual login -->
-            <div style="margin-top: 1rem; text-align: center;">
-                <button 
-                    id="toggleManualLogin" 
-                    type="button" 
-                    style="background: none; border: none; color: #667eea; text-decoration: underline; font-size: 0.8rem; cursor: pointer;"
-                >
-                    Manual pubkey login
-                </button>
-            </div> 
         </div>
     </div>
 
@@ -182,24 +157,8 @@
 
         // Nostr Login Integration
         const nostrLoginSection = document.getElementById('nostrLoginSection');
-        const manualLoginSection = document.getElementById('manualLoginSection');
         const nostrLoginBtn = document.getElementById('nostrLoginBtn');
-        const toggleManualLoginBtn = document.getElementById('toggleManualLogin');
-        const loginForm = document.getElementById('loginForm');
         const loginError = document.getElementById('loginError');
-
-        // Toggle between Nostr login and manual login
-        toggleManualLoginBtn.addEventListener('click', () => {
-            if (manualLoginSection.style.display === 'none') {
-                nostrLoginSection.style.display = 'none';
-                manualLoginSection.style.display = 'block';
-                toggleManualLoginBtn.textContent = 'Back to Nostr login';
-            } else {
-                nostrLoginSection.style.display = 'block';
-                manualLoginSection.style.display = 'none';
-                toggleManualLoginBtn.textContent = 'Manual pubkey login';
-            }
-        });
 
         // Handle nostr-login auth events
         document.addEventListener('nlAuth', async (e) => {
@@ -225,13 +184,6 @@
             document.dispatchEvent(new CustomEvent('nlLaunch', { detail: 'welcome' }));
         });
 
-        // Manual form submission (fallback)
-        loginForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const pubkey = document.getElementById('pubkey').value.trim();
-            await attemptLogin(pubkey);
-        });
-
         // Central login function
         async function attemptLogin(pubkey) {
             loginError.textContent = '';
@@ -252,12 +204,18 @@
                     showDashboard();
                 } else {
                     const error = await response.json();
-                    loginError.textContent = error.error || 'Login failed';
                     
-                    // If the login failed, it might be because the pubkey is not the relay operator
-                    if (loginError.textContent === 'Invalid pubkey') {
-                        loginError.textContent += '. This dashboard requires the relay operator pubkey.';
+                    // Show unauthorized error in a dialog and flush storage
+                    if (response.status === 401) {
+                        alert(error.error || 'Access denied. Only the relay operator can login.');
+                        // Flush storage
+                        localStorage.clear();
+                        sessionStorage.clear();
+                        window.location.reload();
+                        return;
                     }
+                    
+                    loginError.textContent = error.error || 'Login failed';
                 }
             } catch (err) {
                 loginError.textContent = 'Network error: ' + err.message;
@@ -310,13 +268,7 @@
             // Show login screen
             document.getElementById('loginScreen').style.display = 'flex';
             document.getElementById('dashboard').style.display = 'none';
-            document.getElementById('pubkey').value = '';
             loginError.textContent = '';
-            
-            // Reset to Nostr login view
-            nostrLoginSection.style.display = 'block';
-            manualLoginSection.style.display = 'none';
-            toggleManualLoginBtn.textContent = 'Manual pubkey login';
             
             // Refresh page to ensure clean state
             window.location.reload();

@@ -371,6 +371,29 @@
             // If no Admin entry exists, show pubkey in parentheses
             greetingElem.textContent = `Hello Admin (${currentUserPubkey.substring(0, 8)}...)!`;
         }
+
+        // Utility functions for pubkey display (using nostr-tools)
+        function hexToNpub(hex) {
+            try {
+                return NostrTools.nip19.npubEncode(hex);
+            } catch (err) {
+                console.error('Error converting hex to npub:', err);
+                return null;
+            }
+        }
+
+        function npubToHex(npub) {
+            try {
+                const decoded = NostrTools.nip19.decode(npub);
+                if (decoded.type !== 'npub') {
+                    throw new Error('Not an npub');
+                }
+                return decoded.data;
+            } catch (err) {
+                console.error('Error converting npub to hex:', err);
+                return null;
+            }
+        }
         
         // Logout
         document.getElementById('logoutBtn').addEventListener('click', async () => {
