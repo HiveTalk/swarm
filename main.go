@@ -574,32 +574,43 @@ func fetchNostrData(npubDomain string) {
 		log.Println("Using local public/.well-known/nostr.json")
 	} else {
 		// Fetch from remote domain
-		response, err := http.Get("https://" + npubDomain + "/public/.well-known/nostr.json")
-		if err != nil {
-			log.Printf("Error getting well known file: %v", err)
-			return
-		}
-		defer response.Body.Close()
-
-		// Check if response is successful
-		if response.StatusCode != http.StatusOK {
-			log.Printf("HTTP error fetching nostr.json: %s", response.Status)
-			return
+		// First try /public/.well-known/nostr.json
+		urls := []string{
+			"https://" + npubDomain + "/public/.well-known/nostr.json",
+			"https://" + npubDomain + "/.well-known/nostr.json",
 		}
 
-		body, err = io.ReadAll(response.Body)
-		if err != nil {
-			log.Printf("Error reading response body: %v", err)
-			return
-		}
-
-		// Check if response looks like JSON (basic validation)
-		if len(body) == 0 || body[0] != '{' {
-			preview := string(body)
-			if len(preview) > 100 {
-				preview = preview[:100] + "..."
+		var lastErr error
+		for _, url := range urls {
+			response, err := http.Get(url)
+			if err != nil {
+				lastErr = err
+				continue
 			}
-			log.Printf("Invalid response from %s - not JSON: %s", npubDomain, preview)
+			defer response.Body.Close()
+
+			if response.StatusCode != http.StatusOK {
+				lastErr = fmt.Errorf("HTTP %d", response.StatusCode)
+				continue
+			}
+
+			body, err = io.ReadAll(response.Body)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+
+			// Basic JSON validation
+			if len(body) > 0 && body[0] == '{' {
+				log.Printf("Successfully fetched nostr.json from %s", url)
+				lastErr = nil
+				break
+			}
+			lastErr = fmt.Errorf("invalid JSON response from %s", url)
+		}
+
+		if lastErr != nil {
+			log.Printf("Error fetching nostr.json from %s: %v", npubDomain, lastErr)
 			return
 		}
 	}

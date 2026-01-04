@@ -445,10 +445,20 @@
             statusDiv.style.borderLeftColor = '#718096';
             
             if (currentData.isRemote) {
+                const domain = currentData.npubDomain || '';
+                const wellKnownUrl = `https://${domain}/.well-known/nostr.json`;
+                const publicWellKnownUrl = `https://${domain}/public/.well-known/nostr.json`;
+                
                 statusDiv.innerHTML = `
                     <div class="user-info">
                         <div class="user-name">📍 Remote Mode</div>
-                        <div class="user-pubkey">Fetching from: ${currentData.npubDomain || 'Unknown remote domain'}</div>
+                        <div class="user-pubkey">
+                            Fetching from: ${domain}<br>
+                            <small>
+                                <a href="${wellKnownUrl}" target="_blank" style="color: #667eea;">View nostr.json</a> | 
+                                <a href="${publicWellKnownUrl}" target="_blank" style="color: #667eea;">View public nostr.json</a>
+                            </small>
+                        </div>
                     </div>
                 `;
                 userList.appendChild(statusDiv);
