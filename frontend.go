@@ -350,6 +350,10 @@ const frontPageTemplate = `<!DOCTYPE html>
                 <div class="status-item">
                     <div class="status-label">Access Control</div>
                     <div class="status-value">Team Members Only</div>
+                    <div class="status-detail"><a href="/dashboard"  class="btn" 
+                    style="background: #2e6fd0ff; color: white; text-decoration: none; padding: 0.75rem 1.5rem; border-radius: 8px; display: inline-block; font-weight: bold;">
+                    Dashboard</a>
+                    </div>
                 </div>
                 {{if .AllowedKindsStr}}
                 <div class="status-item">
