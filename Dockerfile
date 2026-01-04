@@ -194,10 +194,9 @@ ENV RELAY_PUBKEY="8ad8f1f78c8e11966242e28a7ca15c936b23a999d5fb91bfe4e4472e2d6eaf
 ENV RELAY_DESCRIPTION="Team Nostr relay"
 ENV DB_ENGINE=badger
 ENV DB_PATH=/app/db/
-ENV BLOSSOM_ENABLED=false
-ENV WEBSOCKET_URL=ws://localhost:3334
-ENV NPUB_DOMAIN="hivetalk.org"
-ENV TEAM_DOMAIN="swarm.hivetalk.org"
+ENV NPUB_DOMAIN=
+ENV TEAM_DOMAIN=
+ENV BLOSSOM_ENABLED="true"
 
 # S3/Tigris Storage (optional - defaults to filesystem) Otherwise, use "s3"
 ENV STORAGE_BACKEND=filesystem
