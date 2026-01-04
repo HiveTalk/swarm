@@ -37,7 +37,6 @@ RUN go mod download
 COPY . .
 
 # Copy public files (including nostr.json backup)
-COPY public /app/public
 
 # Copy built bouquet from previous stage
 COPY --from=bouquet-builder /app/bouquet-dist ./bouquet-dist
@@ -47,23 +46,6 @@ RUN CGO_ENABLED=1 go build -ldflags="-s -w" -o /app/swarm
 
 # Stage 3: Runtime - minimal Alpine image
 FROM alpine:latest
-
-# Zeabur-specific labels for automatic volume creation
-LABEL zeabur.service.name="swarm-relay"
-LABEL zeabur.service.type="docker"
-LABEL zeabur.service.port="3334"
-LABEL zeabur.volume.db.size="1Gi"
-LABEL zeabur.volume.db.type="persistent"
-LABEL zeabur.volume.db.mount-path="/app/db"
-LABEL zeabur.volume.public.size="1Gi"
-LABEL zeabur.volume.public.type="persistent"
-LABEL zeabur.volume.public.mount-path="/app/public"
-LABEL zeabur.volume.blossom.size="10Gi"
-LABEL zeabur.volume.blossom.type="persistent"
-LABEL zeabur.volume.blossom.mount-path="/app/blossom"
-LABEL zeabur.volume.backups.size="5Gi"
-LABEL zeabur.volume.backups.type="persistent"
-LABEL zeabur.volume.backups.mount-path="/app/backups"
 
 LABEL "language"="go"
 
@@ -205,10 +187,6 @@ ENV S3_BUCKET=""
 ENV S3_REGION=auto
 ENV S3_PUBLIC_URL=""
 # AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY should be set via secrets, not in Dockerfile
-
-# Add health check and backup on startup
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:${RELAY_PORT:-3334}/ || exit 1
 
 # Use startup script as entrypoint
 ENTRYPOINT ["/app/start.sh"]
