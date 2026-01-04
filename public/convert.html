@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Add NIP-05 Identifier</title>
+    <title>Convert Npub to Hex format</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/nostr-tools@2.10.4/lib/nostr.bundle.js"></script>
     <script src="https://unpkg.com/nostr-login@latest/dist/unpkg.js" data-dark-mode="true" data-methods="extension,connect,readOnly" data-no-banner="true"></script>
@@ -12,8 +12,8 @@
     <div class="container mx-auto px-4 py-12 max-w-2xl">
         <div class="bg-gray-800/50 backdrop-blur-sm rounded-2xl shadow-2xl p-8 border border-purple-500/20">
             <div class="text-center mb-8">
-                <h1 class="text-3xl font-bold text-white mb-2">Add Your NIP-05 Identifier</h1>
-                <p class="text-gray-400">Submit your Nostr pubkey to get a NIP-05 identifier at this domain</p>
+                <h1 class="text-3xl font-bold text-white mb-2">Convert Npub to Hex format</h1>
+                <p class="text-gray-400">Submit your Nostr npub to get a hex format</p>
             </div>
 
             <!-- Nostr Login Section -->
@@ -87,25 +87,7 @@
 
                 <div id="errorMessage" class="hidden bg-red-900/30 border border-red-500/50 rounded-lg p-4 text-red-300 text-sm"></div>
                 <div id="successMessage" class="hidden bg-green-900/30 border border-green-500/50 rounded-lg p-4 text-green-300 text-sm"></div>
-
-                <button 
-                    type="submit" 
-                    id="submitBtn"
-                    class="w-full py-4 px-6 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-semibold rounded-lg shadow-lg transform transition hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-gray-900"
-                >
-                    Submit Request
-                </button>
             </form>
-
-            <div class="mt-8 pt-6 border-t border-gray-700">
-                <h3 class="text-lg font-semibold text-white mb-3">How it works</h3>
-                <ol class="list-decimal list-inside space-y-2 text-gray-400 text-sm">
-                    <li>Enter your desired username and Nostr public key</li>
-                    <li>Submit the form for instant activation</li>
-                    <li>Your NIP-05 identifier will be: <code class="text-purple-300">username@yourdomain.com</code></li>
-                    <li>Verification available immediately at <code class="text-purple-300"><a href="/public/.well-known/nostr.json" class="text-purple-300 hover:text-purple-200">/public/.well-known/nostr.json</a></code></li>
-                </ol>
-            </div>
         </div>
 
         <p class="text-center text-gray-500 text-sm mt-6">

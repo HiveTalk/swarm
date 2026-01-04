@@ -227,8 +227,10 @@ func main() {
 	// Serve Bouquet client static files
 	setupBouquetHandler(relay)
 
+	setupConvertHandlers(relay, config)
+
 	// Add NIP-05 service handlers
-	setupNIP05Handlers(relay, config)
+	//	setupNIP05Handlers(relay, config)
 
 	if !config.BlossomEnabled {
 		// Configure HTTP server with timeouts suitable for large file uploads
@@ -1102,107 +1104,118 @@ func setupBouquetHandler(relay *khatru.Relay) {
 	})
 }
 
-// setupNIP05Handlers adds the NIP-05 service endpoints
-func setupNIP05Handlers(relay *khatru.Relay, config Config) {
+func setupConvertHandlers(relay *khatru.Relay, config Config) {
 	// Serve the NIP-05 registration page
-	relay.Router().HandleFunc("/add-nip05", func(w http.ResponseWriter, r *http.Request) {
+	relay.Router().HandleFunc("/convert", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		http.ServeFile(w, r, "./public/add-nip05.html")
-	})
-
-	// Handle /add-nip05/ (with trailing slash) - redirect to /add-nip05
-	relay.Router().HandleFunc("/add-nip05/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/add-nip05", http.StatusMovedPermanently)
-	})
-
-	// API endpoint for NIP-05 submission
-	relay.Router().HandleFunc("/api/submit-nip05", func(w http.ResponseWriter, r *http.Request) {
-		// Set CORS headers and content type
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		w.Header().Set("Content-Type", "application/json")
-
-		// Helper function to return JSON errors
-		returnError := func(message string, statusCode int) {
-			w.WriteHeader(statusCode)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"success": false,
-				"error":   message,
-			})
-		}
-
-		// Handle CORS preflight
-		if r.Method == "OPTIONS" {
-			w.Header().Set("Access-Control-Max-Age", "86400")
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		if r.Method != "POST" {
-			returnError("Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		// Parse request body
-		var request struct {
-			Username string `json:"username"`
-			Pubkey   string `json:"pubkey"`
-		}
-
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			returnError("Invalid JSON", http.StatusBadRequest)
-			return
-		}
-
-		// Validate inputs
-		username := strings.TrimSpace(strings.ToLower(request.Username))
-		pubkey := strings.TrimSpace(request.Pubkey)
-
-		// Username validation
-		if !matchUsernamePattern(username) {
-			returnError("Invalid username format", http.StatusBadRequest)
-			return
-		}
-
-		// Pubkey validation and conversion
-		hexPubkey, err := validateAndConvertPubkey(pubkey)
-		if err != nil {
-			returnError(err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		// Update nostr.json file directly in persistent volume
-		err = updateNostrJson(username, hexPubkey)
-		if err != nil {
-			returnError(fmt.Sprintf("Failed to update nostr.json: %s", err.Error()), http.StatusInternalServerError)
-			return
-		}
-
-		// Return success response
-		response := map[string]interface{}{
-			"success":  true,
-			"message":  fmt.Sprintf("NIP-05 identifier %s@%s has been successfully registered!", username, config.NPUBDomain),
-			"username": username,
-			"pubkey":   hexPubkey,
-			"nip05":    fmt.Sprintf("%s@%s", username, config.NPUBDomain),
-		}
-
-		json.NewEncoder(w).Encode(response)
+		http.ServeFile(w, r, "./public/convert.html")
 	})
 }
+
+// setupNIP05Handlers adds the NIP-05 service endpoints
+// func setupNIP05Handlers(relay *khatru.Relay, config Config) {
+// 	// Serve the NIP-05 registration page
+// 	relay.Router().HandleFunc("/add-nip05", func(w http.ResponseWriter, r *http.Request) {
+// 		if r.Method != "GET" {
+// 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+// 			return
+// 		}
+// 		http.ServeFile(w, r, "./public/add-nip05.html")
+// 	})
+
+// 	// Handle /add-nip05/ (with trailing slash) - redirect to /add-nip05
+// 	relay.Router().HandleFunc("/add-nip05/", func(w http.ResponseWriter, r *http.Request) {
+// 		http.Redirect(w, r, "/add-nip05", http.StatusMovedPermanently)
+// 	})
+
+// 	// API endpoint for NIP-05 submission
+// 	relay.Router().HandleFunc("/api/submit-nip05", func(w http.ResponseWriter, r *http.Request) {
+// 		// Set CORS headers and content type
+// 		w.Header().Set("Access-Control-Allow-Origin", "*")
+// 		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+// 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+// 		w.Header().Set("Content-Type", "application/json")
+
+// 		// Helper function to return JSON errors
+// 		returnError := func(message string, statusCode int) {
+// 			w.WriteHeader(statusCode)
+// 			json.NewEncoder(w).Encode(map[string]interface{}{
+// 				"success": false,
+// 				"error":   message,
+// 			})
+// 		}
+
+// 		// Handle CORS preflight
+// 		if r.Method == "OPTIONS" {
+// 			w.Header().Set("Access-Control-Max-Age", "86400")
+// 			w.WriteHeader(http.StatusOK)
+// 			return
+// 		}
+
+// 		if r.Method != "POST" {
+// 			returnError("Method not allowed", http.StatusMethodNotAllowed)
+// 			return
+// 		}
+
+// 		// Parse request body
+// 		var request struct {
+// 			Username string `json:"username"`
+// 			Pubkey   string `json:"pubkey"`
+// 		}
+
+// 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+// 			returnError("Invalid JSON", http.StatusBadRequest)
+// 			return
+// 		}
+
+// 		// Validate inputs
+// 		username := strings.TrimSpace(strings.ToLower(request.Username))
+// 		pubkey := strings.TrimSpace(request.Pubkey)
+
+// 		// Username validation
+// 		if !matchUsernamePattern(username) {
+// 			returnError("Invalid username format", http.StatusBadRequest)
+// 			return
+// 		}
+
+// 		// Pubkey validation and conversion
+// 		hexPubkey, err := validateAndConvertPubkey(pubkey)
+// 		if err != nil {
+// 			returnError(err.Error(), http.StatusBadRequest)
+// 			return
+// 		}
+
+// 		// Update nostr.json file directly in persistent volume
+// 		err = updateNostrJson(username, hexPubkey)
+// 		if err != nil {
+// 			returnError(fmt.Sprintf("Failed to update nostr.json: %s", err.Error()), http.StatusInternalServerError)
+// 			return
+// 		}
+
+// 		// Return success response
+// 		response := map[string]interface{}{
+// 			"success":  true,
+// 			"message":  fmt.Sprintf("NIP-05 identifier %s@%s has been successfully registered!", username, config.NPUBDomain),
+// 			"username": username,
+// 			"pubkey":   hexPubkey,
+// 			"nip05":    fmt.Sprintf("%s@%s", username, config.NPUBDomain),
+// 		}
+
+// 		json.NewEncoder(w).Encode(response)
+// 	})
+// }
 
 // Helper functions for NIP-05 validation
-func matchUsernamePattern(username string) bool {
-	if len(username) < 1 || len(username) > 64 {
-		return false
-	}
-	matched, _ := regexp.MatchString(`^[a-z0-9_\.\-]+$`, username)
-	return matched
-}
+// func matchUsernamePattern(username string) bool {
+// 	if len(username) < 1 || len(username) > 64 {
+// 		return false
+// 	}
+// 	matched, _ := regexp.MatchString(`^[a-z0-9_\.\-]+$`, username)
+// 	return matched
+// }
 
 func validateAndConvertPubkey(input string) (string, error) {
 	input = strings.TrimSpace(input)
