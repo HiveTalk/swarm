@@ -1418,7 +1418,8 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 			Value:    req.Pubkey,
 			Path:     "/",
 			HttpOnly: true,
-			SameSite: http.SameSiteStrictMode,
+			Secure:   os.Getenv("DOCKER_ENV") == "true",
+			SameSite: http.SameSiteLaxMode,
 			MaxAge:   3600, // 1 hour
 		})
 

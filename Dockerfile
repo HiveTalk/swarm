@@ -60,6 +60,9 @@ COPY --from=go-builder /app/swarm /app/swarm
 # Copy public files (including nostr.json)
 COPY --from=go-builder /app/public /app/public
 
+# Copy templates for dashboard UI
+COPY --from=go-builder /app/templates /app/templates
+
 # Create backup of original nostr.json for volume initialization
 RUN if [ -f '/app/public/.well-known/nostr.json' ]; then \
         cp /app/public/.well-known/nostr.json /app/public/.well-known/nostr.json.original; \
