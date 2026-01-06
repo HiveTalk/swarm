@@ -1,5 +1,7 @@
 # Swarm: Nostr Team Relay Software
 
+[![Deployed on Zeabur](https://zeabur.com/deployed-on-zeabur-dark.svg)](https://zeabur.com/referral?referralCode=bitkarrot&utm_source=bitkarrot&utm_campaign=oss)
+
 This relay software provides a Nostr relay to a team.  This is a fork of the bitvora [team-relay](https://github.com/bitvora/team-relay) with  modifications for Swarm.hivetalk.org 
 
 In the .env file, the team domain is used to reject non team members, only members in nostr.json are allowed for the specified team domain.
