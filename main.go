@@ -1671,13 +1671,13 @@ func getEnvironmentVars() map[string]string {
 	showVars := []string{
 		"RELAY_NAME", "RELAY_PUBKEY", "RELAY_DESCRIPTION",
 		"TEAM_DOMAIN", "NPUB_DOMAIN", "DB_ENGINE", "DB_PATH",
-		"POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DB",
+		"POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DB", "POSTGRES_PASSWORD",
 		"DATABASE_URL", "BLOSSOM_ENABLED", "BLOSSOM_PATH",
 		"BLOSSOM_URL", "WEBSOCKET_URL", "ALLOWED_KINDS",
 		"PUBLIC_ALLOWED_KINDS", "TRUSTED_CLIENT_NAME", "TRUSTED_CLIENT_KINDS",
 		"MAX_UPLOAD_SIZE_MB", "RELAY_PORT", "ALLOWED_MIRROR_HOSTS",
 		"STORAGE_BACKEND", "S3_ENDPOINT", "S3_BUCKET", "S3_REGION",
-		"S3_PUBLIC_URL", "NIP05_PATH",
+		"S3_PUBLIC_URL", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "NIP05_PATH",
 	}
 
 	for _, varName := range showVars {
@@ -1686,7 +1686,8 @@ func getEnvironmentVars() map[string]string {
 			// Mask sensitive values
 			if strings.Contains(strings.ToLower(varName), "password") ||
 				strings.Contains(strings.ToLower(varName), "secret") ||
-				strings.Contains(strings.ToLower(varName), "key") {
+				strings.Contains(strings.ToLower(varName), "key") ||
+				strings.Contains(strings.ToLower(varName), "database_url") {
 				envVars[varName] = "***MASKED***"
 			} else {
 				envVars[varName] = value
