@@ -30,7 +30,7 @@
     "blossom-client-sdk": "^2.1.1",
     "blurhash": "^2.0.5",
     "dayjs": "^1.11.18",
-    "lodash": "^4.17.21",
+    "lodash": "^4.17.23",
     "nostr-tools": "^2.17.0",
     "p-limit": "^6.2.0",
     "react": "^19.1.1",
