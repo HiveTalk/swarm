@@ -229,6 +229,17 @@ func main() {
 
 	setupConvertHandlers(relay, config)
 
+	// Setup Scheduler
+	scheduler, err := NewScheduler("db") // Use db directory which is already created
+	if err != nil {
+		log.Printf("Failed to initialize scheduler: %v", err)
+	} else {
+		scheduler.Start()
+		relay.Router().HandleFunc("/api/scheduler/schedule", scheduler.HandleSchedule)
+		relay.Router().HandleFunc("/api/scheduler/list", scheduler.HandleList)
+		relay.Router().HandleFunc("/api/scheduler/delete", scheduler.HandleDelete)
+	}
+
 	// Add NIP-05 service handlers
 	//	setupNIP05Handlers(relay, config)
 
