@@ -127,6 +127,7 @@ const frontPageTemplate = `<!DOCTYPE html>
         .method.get { background: #48bb78; color: white; }
         .method.post { background: #ed8936; color: white; }
         .method.put { background: #4299e1; color: white; }
+        .method.delete { background: #e53e3e; color: white; }
         .method.websocket { background: #805ad5; color: white; }
 
         .path {
@@ -277,6 +278,43 @@ const frontPageTemplate = `<!DOCTYPE html>
                 </div>
                 <div class="description">
                     Nostr relay information document (NIP-11) containing relay metadata and policies.
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📅 Scheduled Notes API</h2>
+
+            <div class="endpoint">
+                <div class="endpoint-title">
+                    <span class="method post">POST</span>
+                    <span class="path">/api/scheduler/schedule</span>
+                </div>
+                <div class="description">
+                    Schedule a signed Nostr event for future publication. Requires NIP-98 authentication.
+                    Send a JSON body with <code>signed_event</code>, <code>relays</code>, and <code>scheduled_for</code> (ISO 8601 timestamp).
+                </div>
+            </div>
+
+            <div class="endpoint">
+                <div class="endpoint-title">
+                    <span class="method get">GET</span>
+                    <span class="path">/api/scheduler/list</span>
+                </div>
+                <div class="description">
+                    List all scheduled posts for the authenticated user. Requires NIP-98 authentication.
+                    Returns an array of scheduled posts with their status (pending, published, or failed).
+                </div>
+            </div>
+
+            <div class="endpoint">
+                <div class="endpoint-title">
+                    <span class="method delete">DELETE</span>
+                    <span class="path">/api/scheduler/delete?id={id}</span>
+                </div>
+                <div class="description">
+                    Delete a pending scheduled post by its ID. Requires NIP-98 authentication.
+                    Only the user who created the scheduled post can delete it.
                 </div>
             </div>
         </div>
