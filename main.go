@@ -240,6 +240,13 @@ func main() {
 		relay.Router().HandleFunc("/api/scheduler/delete", scheduler.HandleDelete)
 	}
 
+	// Health check endpoint for scheduler API
+	relay.Router().HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
 	// Add NIP-05 service handlers
 	//	setupNIP05Handlers(relay, config)
 
