@@ -2,17 +2,18 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
-	"github.com/nbd-wtf/go-nostr/nip98"
 )
 
 // ScheduledPost represents a post scheduled for future publication
@@ -219,18 +220,12 @@ func (s *Scheduler) publishPost(post *ScheduledPost) {
 			continue
 		}
 
-		status, err := r.Publish(ctx, *post.SignedEvent)
+		err = r.Publish(ctx, *post.SignedEvent)
 		r.Close()
 
 		if err != nil {
 			log.Printf("Failed to publish to relay %s: %v", relayURL, err)
 			lastErr = err
-			continue
-		}
-
-		if status == nostr.PublishStatusFailed {
-			log.Printf("Relay %s rejected event", relayURL)
-			lastErr = fmt.Errorf("relay rejected event")
 			continue
 		}
 
@@ -401,26 +396,55 @@ func checkAuth(r *http.Request) (string, error) {
 		return "", fmt.Errorf("missing Authorization header")
 	}
 
-	if !nip98.IsValidAuthorizationHeader(authHeader, r.URL.String(), r.Method, "") {
-		return "", fmt.Errorf("invalid NIP-98 authorization")
-	}
-
-	// Extract pubkey (re-parse as verification above doesn't return it)
-	// nip98 package is a bit limited, let's just parse the token
+	// Parse NIP-98 token inline (no nip98 subpackage available)
 	prefix := "Nostr "
-	if len(authHeader) <= len(prefix) {
+	if !strings.HasPrefix(authHeader, prefix) || len(authHeader) <= len(prefix) {
 		return "", fmt.Errorf("invalid header format")
 	}
 	token := authHeader[len(prefix):]
 
-	// Decode event
-	event, err := nip98.ParseAuthorizationToken(token)
+	// Decode base64 event
+	eventJSON, err := base64.StdEncoding.DecodeString(token)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("invalid base64 token: %w", err)
 	}
 
-	// Double check validity (already done by IsValidAuthorizationHeader technically but that func is opaque)
-	// Actually IsValidAuthorizationHeader checks everything.
+	var event nostr.Event
+	if err := json.Unmarshal(eventJSON, &event); err != nil {
+		return "", fmt.Errorf("invalid event JSON: %w", err)
+	}
+
+	// Validate NIP-98 requirements
+	if event.Kind != 27235 {
+		return "", fmt.Errorf("invalid event kind for NIP-98: %d", event.Kind)
+	}
+
+	ok, err := event.CheckSignature()
+	if !ok || err != nil {
+		return "", fmt.Errorf("invalid event signature")
+	}
+
+	// Reconstruct full request URL for comparison
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if fwdProto := r.Header.Get("X-Forwarded-Proto"); fwdProto != "" {
+		scheme = fwdProto
+	}
+	fullURL := scheme + "://" + r.Host + r.URL.RequestURI()
+
+	// Check u tag matches request URL
+	uTag := event.Tags.GetFirst([]string{"u", ""})
+	if uTag == nil || (*uTag)[1] != fullURL {
+		return "", fmt.Errorf("URL mismatch in NIP-98 token: got %s, expected %s", (*uTag)[1], fullURL)
+	}
+
+	// Check method tag
+	methodTag := event.Tags.GetFirst([]string{"method", ""})
+	if methodTag == nil || !strings.EqualFold((*methodTag)[1], r.Method) {
+		return "", fmt.Errorf("method mismatch in NIP-98 token")
+	}
 
 	pubkey := event.PubKey
 
