@@ -177,8 +177,6 @@ Swarm includes comprehensive rate limiting and spam protection:
     S3_PUBLIC_URL=""  # Optional: https://fly.storage.tigris.dev/your-bucket
     ```
 
-For a complete list of all environment variables, see [ENV_VARIABLES.md](ENV_VARIABLES.md).
-
 ## Compiling the Application
 
 1. Clone the repository:
