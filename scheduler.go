@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,10 +25,32 @@ type ScheduledPost struct {
 	SignedEvent  *nostr.Event `json:"signed_event"`
 	Relays       []string     `json:"relays"`
 	ScheduledFor time.Time    `json:"scheduled_for"`
-	Status       string       `json:"status"` // pending, published, failed
+	Status       string       `json:"status"` // pending, processing, published, failed
 	PublishedAt  *time.Time   `json:"published_at,omitempty"`
 	ErrorMessage string       `json:"error_message,omitempty"`
 	CreatedAt    time.Time    `json:"created_at"`
+}
+
+// copy returns a deep copy of the ScheduledPost to prevent data races
+func (p *ScheduledPost) copy() *ScheduledPost {
+	copy := *p
+	if copy.SignedEvent != nil {
+		eventCopy := *p.SignedEvent
+		copy.SignedEvent = &eventCopy
+	}
+	if copy.PublishedAt != nil {
+		t := *p.PublishedAt
+		copy.PublishedAt = &t
+	}
+	if copy.Relays != nil {
+		copy.Relays = make([]string, len(p.Relays))
+		copyRelays(copy.Relays, p.Relays)
+	}
+	return &copy
+}
+
+func copyRelays(dst, src []string) {
+	copy(dst, src)
 }
 
 // SchedulerStore handles persistence of scheduled posts
@@ -73,16 +96,14 @@ func (s *SchedulerStore) load() error {
 }
 
 func (s *SchedulerStore) save() error {
-	s.mu.RLock()
-	data, err := json.MarshalIndent(s.posts, "", "  ")
-	s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
+	data, err := json.MarshalIndent(s.posts, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	return os.WriteFile(s.filePath, data, 0644)
 }
 
@@ -97,7 +118,7 @@ func (s *SchedulerStore) Get(id string) (*ScheduledPost, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if post, ok := s.posts[id]; ok {
-		return post, nil
+		return post.copy(), nil
 	}
 	return nil, fmt.Errorf("post not found")
 }
@@ -122,22 +143,58 @@ func (s *SchedulerStore) ListByUser(pubkey string) []*ScheduledPost {
 	var result []*ScheduledPost
 	for _, post := range s.posts {
 		if post.UserPubkey == pubkey {
-			result = append(result, post)
+			result = append(result, post.copy())
 		}
 	}
 	return result
 }
 
 func (s *SchedulerStore) ListPending() []*ScheduledPost {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	var result []*ScheduledPost
+	now := time.Now()
+
 	for _, post := range s.posts {
-		if post.Status == "pending" {
-			result = append(result, post)
+		if post.Status == "pending" &&
+			(post.ScheduledFor.Before(now) || post.ScheduledFor.Equal(now)) {
+			// Atomically transition to "processing" to prevent duplicate work
+			post.Status = "processing"
+			result = append(result, post.copy())
 		}
 	}
+
+	// Persist status changes atomically
+	go s.save()
+
 	return result
+}
+
+// validateRelayURL performs SSRF protection by validating relay URLs
+func validateRelayURL(relayURL string) error {
+	// Parse URL to ensure it's well-formed
+	u, err := url.Parse(relayURL)
+	if err != nil {
+		return fmt.Errorf("invalid relay URL: %w", err)
+	}
+
+	// Only allow ws://, wss://, http://, https:// schemes
+	if u.Scheme != "ws" && u.Scheme != "wss" && u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("unsupported relay scheme: %s", u.Scheme)
+	}
+
+	// Block private/local network addresses (basic SSRF protection)
+	host := u.Hostname()
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" ||
+		strings.HasPrefix(host, "192.168.") ||
+		strings.HasPrefix(host, "10.") ||
+		strings.HasPrefix(host, "172.16.") ||
+		strings.HasPrefix(host, "169.254.") {
+		return fmt.Errorf("blocked relay address: %s", host)
+	}
+
+	return nil
 }
 
 // Scheduler handles the background processing of scheduled posts
@@ -153,6 +210,15 @@ func NewScheduler(dataDir string) (*Scheduler, error) {
 	return &Scheduler{store: store}, nil
 }
 
+// logWithFields is a simple structured logging helper
+func logWithFields(level, message string, fields map[string]interface{}) {
+	fieldStrs := make([]string, 0, len(fields))
+	for k, v := range fields {
+		fieldStrs = append(fieldStrs, fmt.Sprintf("%s=%v", k, v))
+	}
+	log.Printf("[%s] %s %s", level, message, strings.Join(fieldStrs, " "))
+}
+
 func (s *Scheduler) Start() {
 	ticker := time.NewTicker(1 * time.Minute)
 	go func() {
@@ -160,62 +226,68 @@ func (s *Scheduler) Start() {
 			s.processPendingPosts()
 		}
 	}()
-	log.Println("Scheduler started, checking every minute")
+	logWithFields("info", "Scheduler started", map[string]interface{}{
+		"interval": "1 minute",
+	})
 }
 
 func (s *Scheduler) processPendingPosts() {
 	posts := s.store.ListPending()
-	now := time.Now()
 
 	for _, post := range posts {
-		if post.ScheduledFor.Before(now) || post.ScheduledFor.Equal(now) {
-			go s.publishPost(post)
-		}
+		go s.publishPost(post)
 	}
 }
 
 func (s *Scheduler) publishPost(post *ScheduledPost) {
-	log.Printf("Publishing scheduled post %s...", post.ID)
+	logWithFields("info", "Publishing scheduled post", map[string]interface{}{
+		"post_id":     post.ID,
+		"user_pubkey": post.UserPubkey,
+	})
 
-	// Publish to local relay
 	ctx := context.Background()
-
-	// We need to add the event to the relay
-	// using the existing global 'relay' variable from main.go
-	if relay != nil {
-		// Use StoreEvent which goes through the full pipeline
-		// But wait, StoreEvent might reject if it thinks it's spam or unauthorized?
-		// Since it's a signed event by a valid user, it should be fine.
-		// However, typical AddEvent flow is better.
-		// relay.AddEvent(ctx, post.SignedEvent)
-		// But let's look at how main.go uses db.SaveEvent directly or relay.ReceiveEvent
-
-		// Actually, we can just treat it as an incoming event
-		// But since we are internal, we can skip some checks if we want,
-		// but safer to go through normal channels.
-		// Let's try to add it to the database directly if 'relay' isn't easily accessible for injection
-		// But 'relay' IS global in main.go (which this file is part of).
-
-		// Wait, relay.AddEvent is for internal add.
-		added, err := relay.AddEvent(ctx, post.SignedEvent)
-		if err != nil {
-			log.Printf("Failed to add event to local relay: %v", err)
-		} else {
-			log.Printf("Added event to local relay, status: %v", added)
-		}
-	}
-
-	// Publish to other relays
 	successCount := 0
 	var lastErr error
 
+	// Publish to local relay first
+	if relay != nil {
+		added, err := relay.AddEvent(ctx, post.SignedEvent)
+		if err != nil {
+			logWithFields("error", "Failed to add event to local relay", map[string]interface{}{
+				"post_id": post.ID,
+				"error":   err.Error(),
+			})
+			lastErr = err
+		} else if added {
+			successCount++
+			logWithFields("info", "Added event to local relay", map[string]interface{}{
+				"post_id": post.ID,
+			})
+		}
+	}
+
+	// Validate and publish to external relays
 	for _, relayURL := range post.Relays {
-		// Skip if it's the local relay (we already added it)
-		// TODO: simple check?
+		// SSRF protection: validate relay URL
+		if err := validateRelayURL(relayURL); err != nil {
+			logWithFields("warn", "Skipping invalid relay URL", map[string]interface{}{
+				"post_id":   post.ID,
+				"relay_url": relayURL,
+				"error":     err.Error(),
+			})
+			if lastErr == nil {
+				lastErr = err
+			}
+			continue
+		}
 
 		r, err := nostr.RelayConnect(ctx, relayURL)
 		if err != nil {
-			log.Printf("Failed to connect to relay %s: %v", relayURL, err)
+			logWithFields("error", "Failed to connect to relay", map[string]interface{}{
+				"post_id":   post.ID,
+				"relay_url": relayURL,
+				"error":     err.Error(),
+			})
 			lastErr = err
 			continue
 		}
@@ -224,29 +296,49 @@ func (s *Scheduler) publishPost(post *ScheduledPost) {
 		r.Close()
 
 		if err != nil {
-			log.Printf("Failed to publish to relay %s: %v", relayURL, err)
+			logWithFields("error", "Failed to publish to relay", map[string]interface{}{
+				"post_id":   post.ID,
+				"relay_url": relayURL,
+				"error":     err.Error(),
+			})
 			lastErr = err
 			continue
 		}
 
 		successCount++
+		logWithFields("info", "Published to relay", map[string]interface{}{
+			"post_id":   post.ID,
+			"relay_url": relayURL,
+		})
 	}
 
-	// Update status
+	// Update status based on actual publish results
 	post.Status = "published"
-	if successCount == 0 && len(post.Relays) > 0 {
+	if successCount == 0 {
 		post.Status = "failed"
 		if lastErr != nil {
-			post.ErrorMessage = lastErr.Error()
+			post.ErrorMessage = "Publish failed"
 		} else {
-			post.ErrorMessage = "Unknown error"
+			post.ErrorMessage = "No valid relays specified"
 		}
 	}
 
 	now := time.Now()
 	post.PublishedAt = &now
 
-	s.store.Update(post)
+	if err := s.store.Update(post); err != nil {
+		logWithFields("error", "Failed to update post status", map[string]interface{}{
+			"post_id": post.ID,
+			"status":  post.Status,
+			"error":   err.Error(),
+		})
+	}
+
+	logWithFields("info", "Finished publishing scheduled post", map[string]interface{}{
+		"post_id":       post.ID,
+		"final_status":  post.Status,
+		"success_count": successCount,
+	})
 }
 
 // HTTP Handlers
@@ -272,7 +364,10 @@ func (s *Scheduler) HandleSchedule(w http.ResponseWriter, r *http.Request) {
 	// Auth Check (NIP-98)
 	userPubkey, err := checkAuth(r)
 	if err != nil {
-		http.Error(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
+		logWithFields("warn", "Unauthorized schedule attempt", map[string]interface{}{
+			"error": err.Error(),
+		})
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -284,12 +379,20 @@ func (s *Scheduler) HandleSchedule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logWithFields("warn", "Invalid JSON in schedule request", map[string]interface{}{
+			"user_pubkey": userPubkey,
+			"error":       err.Error(),
+		})
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
 
 	// Validate User (must match signed event pubkey)
 	if req.SignedEvent.PubKey != userPubkey {
+		logWithFields("warn", "Event pubkey mismatch", map[string]interface{}{
+			"user_pubkey":     userPubkey,
+			"event_pubkey":    req.SignedEvent.PubKey,
+		})
 		http.Error(w, "Event pubkey mismatch", http.StatusBadRequest)
 		return
 	}
@@ -297,13 +400,29 @@ func (s *Scheduler) HandleSchedule(w http.ResponseWriter, r *http.Request) {
 	// Validate signature
 	ok, err := req.SignedEvent.CheckSignature()
 	if !ok || err != nil {
+		logWithFields("warn", "Invalid event signature", map[string]interface{}{
+			"user_pubkey": userPubkey,
+		})
 		http.Error(w, "Invalid event signature", http.StatusBadRequest)
 		return
 	}
 
+	// Validate relay URLs (SSRF protection)
+	for _, relayURL := range req.Relays {
+		if err := validateRelayURL(relayURL); err != nil {
+			logWithFields("warn", "Invalid relay URL in request", map[string]interface{}{
+				"user_pubkey": userPubkey,
+				"relay_url":   relayURL,
+				"error":       err.Error(),
+			})
+			http.Error(w, "Invalid relay URL", http.StatusBadRequest)
+			return
+		}
+	}
+
 	// Create ScheduledPost
 	post := &ScheduledPost{
-		ID:           nostr.GeneratePrivateKey(), // Use a random ID or unique enough string
+		ID:           nostr.GeneratePrivateKey(),
 		UserPubkey:   userPubkey,
 		Kind:         req.SignedEvent.Kind,
 		SignedEvent:  &req.SignedEvent,
@@ -314,9 +433,21 @@ func (s *Scheduler) HandleSchedule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.store.Add(post); err != nil {
-		http.Error(w, "Failed to save schedule: "+err.Error(), http.StatusInternalServerError)
+		logWithFields("error", "Failed to save scheduled post", map[string]interface{}{
+			"user_pubkey": userPubkey,
+			"post_id":     post.ID,
+			"error":       err.Error(),
+		})
+		http.Error(w, "Failed to save schedule", http.StatusInternalServerError)
 		return
 	}
+
+	logWithFields("info", "Scheduled post created", map[string]interface{}{
+		"user_pubkey":    userPubkey,
+		"post_id":        post.ID,
+		"scheduled_for":  req.ScheduledFor,
+		"relay_count":    len(req.Relays),
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(post)
@@ -336,11 +467,19 @@ func (s *Scheduler) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	userPubkey, err := checkAuth(r)
 	if err != nil {
-		http.Error(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
+		logWithFields("warn", "Unauthorized list attempt", map[string]interface{}{
+			"error": err.Error(),
+		})
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	posts := s.store.ListByUser(userPubkey)
+
+	logWithFields("info", "Listed scheduled posts", map[string]interface{}{
+		"user_pubkey":  userPubkey,
+		"post_count":   len(posts),
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(posts)
@@ -360,7 +499,10 @@ func (s *Scheduler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 
 	userPubkey, err := checkAuth(r)
 	if err != nil {
-		http.Error(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
+		logWithFields("warn", "Unauthorized delete attempt", map[string]interface{}{
+			"error": err.Error(),
+		})
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -372,19 +514,38 @@ func (s *Scheduler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 
 	post, err := s.store.Get(id)
 	if err != nil {
+		logWithFields("warn", "Post not found for deletion", map[string]interface{}{
+			"user_pubkey": userPubkey,
+			"post_id":     id,
+		})
 		http.Error(w, "Post not found", http.StatusNotFound)
 		return
 	}
 
 	if post.UserPubkey != userPubkey {
+		logWithFields("warn", "Forbidden deletion attempt", map[string]interface{}{
+			"user_pubkey":  userPubkey,
+			"post_owner":   post.UserPubkey,
+			"post_id":      id,
+		})
 		http.Error(w, "Not allowed", http.StatusForbidden)
 		return
 	}
 
 	if err := s.store.Delete(id); err != nil {
-		http.Error(w, "Failed to delete: "+err.Error(), http.StatusInternalServerError)
+		logWithFields("error", "Failed to delete scheduled post", map[string]interface{}{
+			"user_pubkey": userPubkey,
+			"post_id":     id,
+			"error":       err.Error(),
+		})
+		http.Error(w, "Failed to delete", http.StatusInternalServerError)
 		return
 	}
+
+	logWithFields("info", "Deleted scheduled post", map[string]interface{}{
+		"user_pubkey": userPubkey,
+		"post_id":     id,
+	})
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -434,15 +595,21 @@ func checkAuth(r *http.Request) (string, error) {
 	}
 	fullURL := scheme + "://" + r.Host + r.URL.RequestURI()
 
-	// Check u tag matches request URL
+	// Check u tag matches request URL (fix potential panic)
 	uTag := event.Tags.GetFirst([]string{"u", ""})
-	if uTag == nil || (*uTag)[1] != fullURL {
-		return "", fmt.Errorf("URL mismatch in NIP-98 token: got %s, expected %s", (*uTag)[1], fullURL)
+	if uTag == nil || len(*uTag) < 2 {
+		return "", fmt.Errorf("missing or malformed u tag in NIP-98 token")
+	}
+	if (*uTag)[1] != fullURL {
+		return "", fmt.Errorf("URL mismatch in NIP-98 token")
 	}
 
 	// Check method tag
 	methodTag := event.Tags.GetFirst([]string{"method", ""})
-	if methodTag == nil || !strings.EqualFold((*methodTag)[1], r.Method) {
+	if methodTag == nil || len(*methodTag) < 2 {
+		return "", fmt.Errorf("missing or malformed method tag in NIP-98 token")
+	}
+	if !strings.EqualFold((*methodTag)[1], r.Method) {
 		return "", fmt.Errorf("method mismatch in NIP-98 token")
 	}
 

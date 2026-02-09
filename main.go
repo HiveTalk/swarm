@@ -229,8 +229,9 @@ func main() {
 
 	setupConvertHandlers(relay, config)
 
-	// Setup Scheduler
-	scheduler, err := NewScheduler("db") // Use db directory which is already created
+	// Setup Scheduler - use configured DB path
+	schedulerDataPath := *config.DBPath
+	scheduler, err := NewScheduler(schedulerDataPath)
 	if err != nil {
 		log.Printf("Failed to initialize scheduler: %v", err)
 	} else {
