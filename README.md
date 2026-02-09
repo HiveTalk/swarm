@@ -177,54 +177,49 @@ Swarm includes comprehensive rate limiting and spam protection:
     S3_PUBLIC_URL=""  # Optional: https://fly.storage.tigris.dev/your-bucket
     ```
 
-## Compiling the Application
-
-1. Clone the repository:
-
-   ```bash
-   git clone https://github.com/hivetalk/swarm.git
-   cd swarm
-   ```
-
-2. Build the application:
-
-
 ## 🚀 Quick Setup
 
-### 1. Clone with Submodules
+Swarm supports two deployment modes:
+
+### Option A: CMS + Relay (full stack)
 
 ```bash
+# Clone with submodules (required for CMS)
 git clone --recurse-submodules https://github.com/hivetalk/swarm.git
 cd swarm
 
-# If already cloned without submodules:
-git submodule update --init --recursive
-```
-
-### 2. Build the nostr-cms Client
-
-```bash
-# Set environment variables for the build
+# Build the CMS frontend
 export VITE_DEFAULT_RELAY=wss://yourdomain.com
 export VITE_MASTER_PUBKEY=your_hex_pubkey
-
-# Build the CMS frontend
 ./build-nostr-cms.sh
+
+# Build and run
+go build -o swarm && ./swarm
 ```
 
-### 3. Start the Go Server
-
-```bash
-# Build and run the Go server
-go build -o swarm
-./swarm
-```
-
-### 4. Access the Application
-
+**Endpoints:**
 - **CMS (home page)**: http://localhost:3334/
 - **CMS admin panel**: http://localhost:3334/admin
 - **Relay info page**: http://localhost:3334/relay-info
+- **Relay dashboard**: http://localhost:3334/dashboard
+- **WebSocket relay**: ws://localhost:3334/
+- **Health check**: http://localhost:3334/api/health
+
+### Option B: Relay Only (no CMS)
+
+```bash
+# Submodules not needed
+git clone https://github.com/hivetalk/swarm.git
+cd swarm
+
+# Build and run (no CMS build step needed)
+go build -o swarm && ./swarm
+```
+
+Root `/` automatically redirects to `/relay-info` when the CMS is not present.
+
+**Endpoints:**
+- **Relay info page**: http://localhost:3334/relay-info (also `/`)
 - **Relay dashboard**: http://localhost:3334/dashboard
 - **WebSocket relay**: ws://localhost:3334/
 - **Health check**: http://localhost:3334/api/health
@@ -236,8 +231,6 @@ sudo apt-get update
 sudo apt-get install -y liblmdb-dev build-essential
 ```
 
-For the full integration plan and endpoint details, see [SWARM_CMS_INTEGRATION.md](../SWARM_CMS_INTEGRATION.md).
-
 ## Running Docker
 
 ### Build the image
@@ -245,7 +238,11 @@ For the full integration plan and endpoint details, see [SWARM_CMS_INTEGRATION.m
 From the repo root:
 
 ```bash
+# CMS + Relay (default, requires submodules)
 docker build -t hivetalk/swarm .
+
+# Relay only (no submodules needed)
+docker build --build-arg BUILD_CMS=false -t hivetalk/swarm .
 ```
 
 ### Run with local .env
@@ -276,6 +273,9 @@ docker compose up -d
 
 # Or start with build
 docker compose up -d --build
+
+# Relay only (no CMS)
+BUILD_CMS=false docker compose up -d --build
 ```
 
 To override specific variables without editing `.env`:

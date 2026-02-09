@@ -1,17 +1,51 @@
 # Zeabur Deployment Guide
 
-## nostr-cms Build Configuration
+## Deployment Modes
 
-The Dockerfile builds the nostr-cms frontend as part of the Docker image. You need to set these build args for your deployment:
+Swarm supports two deployment modes controlled by the `BUILD_CMS` build arg:
+
+### CMS + Relay (default)
+
+Deploys the full stack: Nostr relay + nostr-cms content manager at `/`.
 
 | Build Arg | Purpose | Example |
 |-----------|---------|--------|
+| `BUILD_CMS` | Enable CMS build | `true` (default) |
 | `VITE_DEFAULT_RELAY` | WebSocket URL for the relay | `wss://swarm.hivetalk.org` |
 | `VITE_MASTER_PUBKEY` | Site owner hex pubkey | `8ad8f1f...` |
 
-These are configured in `docker-compose.yml` and default to `${WEBSOCKET_URL}` and `${RELAY_PUBKEY}` from your `.env`.
+**Zeabur:** Set these as environment variables — they'll be picked up as Docker build args.
 
-For Zeabur, set these as environment variables — they'll be picked up during the Docker build.
+**Docker Compose:**
+```bash
+# Clone with submodules
+git clone --recurse-submodules https://github.com/HiveTalk/swarm.git
+cd swarm
+
+# Deploy CMS + Relay
+WEBSOCKET_URL=wss://your-domain.com RELAY_PUBKEY=your-hex-pubkey docker compose up -d
+```
+
+### Relay Only
+
+Deploys just the Nostr relay, Blossom, scheduler, and dashboard — no CMS frontend.
+Root `/` redirects to the relay info page at `/relay-info`.
+
+| Build Arg | Purpose | Value |
+|-----------|---------|-------|
+| `BUILD_CMS` | Disable CMS build | `false` |
+
+**Zeabur:** Set `BUILD_CMS=false` in your environment variables. No submodule initialization needed.
+
+**Docker Compose:**
+```bash
+# Submodules not required for relay-only
+git clone https://github.com/HiveTalk/swarm.git
+cd swarm
+
+# Deploy relay only
+BUILD_CMS=false docker compose up -d
+```
 
 ## Persistent Data Strategy
 

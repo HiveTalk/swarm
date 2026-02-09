@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
+        BUILD_CMS: ${BUILD_CMS:-true}
         VITE_DEFAULT_RELAY: ${WEBSOCKET_URL:-ws://localhost:3334}
         VITE_MASTER_PUBKEY: ${RELAY_PUBKEY:-}
     container_name: swarm_relay

@@ -7,6 +7,7 @@ docker:
   dockerfile: Dockerfile
   context: .
   buildArgs:
+    BUILD_CMS: ${BUILD_CMS:-true}
     VITE_DEFAULT_RELAY: ${WEBSOCKET_URL:-ws://localhost:3334}
     VITE_MASTER_PUBKEY: ${RELAY_PUBKEY:-}
 

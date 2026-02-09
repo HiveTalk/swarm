@@ -1,26 +1,36 @@
-# Multi-stage Dockerfile with nostr-cms client build
+# Multi-stage Dockerfile with optional nostr-cms client build
+#
+# Deployment modes:
+#   CMS + Relay (default): docker build .
+#   Relay only:            docker build --build-arg BUILD_CMS=false .
+#
+# When BUILD_CMS=true, you must clone with --recurse-submodules
+# or run 'git submodule update --init --recursive' before building.
 
-# Stage 1: Build nostr-cms client
-# NOTE: clients/nostr-cms is a git submodule. You must clone with --recurse-submodules
-# or run 'git submodule update --init --recursive' before building this image.
+# Stage 1: Conditionally build nostr-cms client
 FROM node:20 AS cms-builder
 
-WORKDIR /app/clients/nostr-cms
-
-# Copy package files and install dependencies (fails early if submodule not initialized)
-COPY clients/nostr-cms/package.json clients/nostr-cms/package-lock.json* ./
-RUN npm install --silent
-
-# Copy rest of nostr-cms source
-COPY clients/nostr-cms/ ./
-
-# Build nostr-cms with environment variables
+ARG BUILD_CMS=true
 ARG VITE_DEFAULT_RELAY=ws://localhost:3334
 ARG VITE_MASTER_PUBKEY=
-RUN VITE_DEFAULT_RELAY=${VITE_DEFAULT_RELAY} \
-    VITE_MASTER_PUBKEY=${VITE_MASTER_PUBKEY} \
-    NODE_OPTIONS='--max-old-space-size=4096' \
-    npx vite build --outDir /app/nostr-cms-dist
+
+WORKDIR /app
+RUN mkdir -p /app/nostr-cms-dist
+
+# Copy full context for conditional CMS build
+COPY . /tmp/src
+
+RUN if [ "$BUILD_CMS" = "true" ] && [ -f "/tmp/src/clients/nostr-cms/package.json" ]; then \
+        echo "Building nostr-cms..." && \
+        cd /tmp/src/clients/nostr-cms && \
+        npm install --silent && \
+        VITE_DEFAULT_RELAY=${VITE_DEFAULT_RELAY} \
+        VITE_MASTER_PUBKEY=${VITE_MASTER_PUBKEY} \
+        NODE_OPTIONS='--max-old-space-size=4096' \
+        npx vite build --outDir /app/nostr-cms-dist; \
+    else \
+        echo "CMS build skipped (BUILD_CMS=${BUILD_CMS})"; \
+    fi && rm -rf /tmp/src
 
 # Stage 2: Build Go binary
 FROM golang:1.24-alpine AS go-builder

@@ -199,7 +199,7 @@ func main() {
 
 	// Setup relay info page at /relay-info and CMS SPA at root /
 	setupRelayInfoHandler(relay, config)
-	setupRootHandler(relay)
+	setupRootHandler(relay, config)
 
 	// Setup dashboard handlers
 	setupDashboardHandlers(relay, config)
@@ -1090,12 +1090,36 @@ func extractSha256FromURL(url string) string {
 	return ""
 }
 
-// setupRootHandler serves nostr-cms SPA at root and handles WebSocket relay upgrades
-func setupRootHandler(relay *khatru.Relay) {
+// cmsAvailable checks if the nostr-cms SPA has been built and is present
+func cmsAvailable() bool {
+	info, err := os.Stat("./nostr-cms-dist/index.html")
+	return err == nil && !info.IsDir()
+}
+
+// setupRootHandler serves nostr-cms SPA at root and handles WebSocket relay upgrades.
+// If nostr-cms-dist is not present (relay-only mode), root GET requests redirect to /relay-info.
+func setupRootHandler(relay *khatru.Relay, config Config) {
+	hasCMS := cmsAvailable()
+	if hasCMS {
+		log.Println("📰 CMS mode: serving nostr-cms at /")
+	} else {
+		log.Println("📡 Relay-only mode: CMS not found, redirecting / to /relay-info")
+	}
+
 	relay.Router().HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// WebSocket upgrade → Nostr relay
 		if strings.ToLower(r.Header.Get("Upgrade")) == "websocket" {
 			relay.ServeHTTP(w, r)
+			return
+		}
+
+		// Relay-only mode: redirect root to relay info page
+		if !hasCMS {
+			if r.URL.Path == "/" {
+				http.Redirect(w, r, "/relay-info", http.StatusTemporaryRedirect)
+				return
+			}
+			http.NotFound(w, r)
 			return
 		}
 
