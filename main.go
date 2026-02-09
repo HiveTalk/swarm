@@ -229,6 +229,25 @@ func main() {
 
 	setupConvertHandlers(relay, config)
 
+	// Setup Scheduler - use configured DB path
+	schedulerDataPath := *config.DBPath
+	scheduler, err := NewScheduler(schedulerDataPath)
+	if err != nil {
+		log.Printf("Failed to initialize scheduler: %v", err)
+	} else {
+		scheduler.Start()
+		relay.Router().HandleFunc("/api/scheduler/schedule", scheduler.HandleSchedule)
+		relay.Router().HandleFunc("/api/scheduler/list", scheduler.HandleList)
+		relay.Router().HandleFunc("/api/scheduler/delete", scheduler.HandleDelete)
+	}
+
+	// Health check endpoint for scheduler API
+	relay.Router().HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
 	// Add NIP-05 service handlers
 	//	setupNIP05Handlers(relay, config)
 
