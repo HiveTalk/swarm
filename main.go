@@ -1105,13 +1105,21 @@ func setupRootHandler(relay *khatru.Relay) {
 			requestedPath = "index.html"
 		}
 
-		// Prevent directory traversal
-		if strings.Contains(requestedPath, "..") {
-			http.Error(w, "Invalid path", http.StatusBadRequest)
+		// Resolve the absolute path of the static directory
+		staticDir, err := filepath.Abs("./nostr-cms-dist")
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 
-		filePath := "./nostr-cms-dist/" + requestedPath
+		// Clean and resolve the requested file path
+		filePath := filepath.Join(staticDir, filepath.Clean("/"+requestedPath))
+
+		// Prevent directory traversal: ensure resolved path is within static dir
+		if !strings.HasPrefix(filePath, staticDir+string(filepath.Separator)) && filePath != staticDir {
+			http.Error(w, "Invalid path", http.StatusBadRequest)
+			return
+		}
 
 		// If the file exists on disk, serve it directly (JS, CSS, images, etc.)
 		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {

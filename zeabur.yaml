@@ -7,7 +7,7 @@ docker:
   dockerfile: Dockerfile
   context: .
   buildArgs:
-    VITE_DEFAULT_RELAY: ${WEBSOCKET_URL:-wss://localhost:3334}
+    VITE_DEFAULT_RELAY: ${WEBSOCKET_URL:-ws://localhost:3334}
     VITE_MASTER_PUBKEY: ${RELAY_PUBKEY:-}
 
 # Conditionally create volumes based on environment

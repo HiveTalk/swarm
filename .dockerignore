@@ -19,8 +19,8 @@ swarm
 .DS_Store
 Thumbs.db
 
-# Node modules (bouquet client)
-clients/bouquet/node_modules
+# Node modules (nostr-cms client)
+clients/nostr-cms/node_modules
 
 # Test files (may have conflicting main() functions)
 test_*.go

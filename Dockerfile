@@ -1,11 +1,13 @@
 # Multi-stage Dockerfile with nostr-cms client build
 
 # Stage 1: Build nostr-cms client
+# NOTE: clients/nostr-cms is a git submodule. You must clone with --recurse-submodules
+# or run 'git submodule update --init --recursive' before building this image.
 FROM node:20 AS cms-builder
 
 WORKDIR /app/clients/nostr-cms
 
-# Copy package files and install dependencies
+# Copy package files and install dependencies (fails early if submodule not initialized)
 COPY clients/nostr-cms/package.json clients/nostr-cms/package-lock.json* ./
 RUN npm install --silent
 
@@ -13,7 +15,7 @@ RUN npm install --silent
 COPY clients/nostr-cms/ ./
 
 # Build nostr-cms with environment variables
-ARG VITE_DEFAULT_RELAY=wss://localhost:3334
+ARG VITE_DEFAULT_RELAY=ws://localhost:3334
 ARG VITE_MASTER_PUBKEY=
 RUN VITE_DEFAULT_RELAY=${VITE_DEFAULT_RELAY} \
     VITE_MASTER_PUBKEY=${VITE_MASTER_PUBKEY} \
