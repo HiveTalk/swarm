@@ -102,7 +102,7 @@ Use these when you want to store media in S3-compatible storage instead of the l
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `TRUSTED_CLIENT_NAME` | Client tag name to trust (e.g., `"bouquet"`) | `""` |
+| `TRUSTED_CLIENT_NAME` | Client tag name to trust (e.g., `"nostr-cms"`) | `""` |
 | `TRUSTED_CLIENT_KINDS` | Comma-separated kinds allowed for trusted client, or `"*"` for all | `""` |
 
 ---

@@ -4,14 +4,14 @@
 
 ### Quick Start
 ```bash
-# The build script automatically detects low memory and optimizes
-./build-bouquet.sh
+# Build nostr-cms with default settings
+./build-nostr-cms.sh
 ```
 
 ### Manual Low-Memory Build
 ```bash
-cd clients/bouquet
-pnpm run build:low-memory
+cd clients/nostr-cms
+NODE_OPTIONS='--max-old-space-size=384' npx vite build --outDir ../../nostr-cms-dist
 ```
 
 ### Additional Optimizations
@@ -49,23 +49,25 @@ export npm_config_cache=/tmp/npm-cache
 If local builds still fail, consider using GitHub Actions for building:
 
 ```yaml
-# .github/workflows/build-bouquet.yml
-name: Build Bouquet
+# .github/workflows/build-nostr-cms.yml
+name: Build nostr-cms
 on: [push]
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
         with:
-          node-version: '18'
-      - run: cd clients/bouquet && npm install
-      - run: cd clients/bouquet && npm run build:low-memory
-      - uses: actions/upload-artifact@v3
+          submodules: recursive
+      - uses: actions/setup-node@v4
         with:
-          name: bouquet-dist
-          path: bouquet-dist/
+          node-version: '20'
+      - run: cd clients/nostr-cms && npm install
+      - run: cd clients/nostr-cms && NODE_OPTIONS='--max-old-space-size=384' npx vite build --outDir ../../nostr-cms-dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nostr-cms-dist
+          path: nostr-cms-dist/
 ```
 
 ### Memory Usage Breakdown
@@ -76,7 +78,7 @@ jobs:
 
 ### Troubleshooting
 If build still fails:
-1. Try `build:low-memory` directly
+1. Try the manual low-memory build command above
 2. Restart terminal to clear memory
 3. Check `free -m` for available memory
 4. Consider using a build server or CI/CD
