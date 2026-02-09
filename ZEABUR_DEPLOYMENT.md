@@ -8,13 +8,16 @@ Swarm supports two deployment modes controlled by the `BUILD_CMS` build arg:
 
 Deploys the full stack: Nostr relay + nostr-cms content manager at `/`.
 
+The CMS **auto-detects** the relay WebSocket URL from the current domain at runtime,
+so `VITE_DEFAULT_RELAY` is no longer required. The only optional build arg is:
+
 | Build Arg | Purpose | Example |
 |-----------|---------|--------|
 | `BUILD_CMS` | Enable CMS build | `true` (default) |
-| `VITE_DEFAULT_RELAY` | WebSocket URL for the relay | `wss://swarm.hivetalk.org` |
-| `VITE_MASTER_PUBKEY` | Site owner hex pubkey | `8ad8f1f...` |
+| `VITE_MASTER_PUBKEY` | Site owner hex pubkey (optional) | `8ad8f1f...` |
 
-**Zeabur:** Set these as environment variables — they'll be picked up as Docker build args.
+**Zeabur:** Just deploy the `cms-integration` branch — no environment variables needed for the CMS.
+Optionally set `VITE_MASTER_PUBKEY` if you want the CMS to sync config from a master pubkey.
 
 **Docker Compose:**
 ```bash
@@ -22,8 +25,8 @@ Deploys the full stack: Nostr relay + nostr-cms content manager at `/`.
 git clone --recurse-submodules https://github.com/HiveTalk/swarm.git
 cd swarm
 
-# Deploy CMS + Relay
-WEBSOCKET_URL=wss://your-domain.com RELAY_PUBKEY=your-hex-pubkey docker compose up -d
+# Deploy CMS + Relay (zero config — relay URL auto-detected)
+docker compose up -d
 ```
 
 ### Relay Only

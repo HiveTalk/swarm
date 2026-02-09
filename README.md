@@ -188,9 +188,7 @@ Swarm supports two deployment modes:
 git clone --recurse-submodules https://github.com/hivetalk/swarm.git
 cd swarm
 
-# Build the CMS frontend
-export VITE_DEFAULT_RELAY=wss://yourdomain.com
-export VITE_MASTER_PUBKEY=your_hex_pubkey
+# Build the CMS frontend (relay URL auto-detected from domain at runtime)
 ./build-nostr-cms.sh
 
 # Build and run

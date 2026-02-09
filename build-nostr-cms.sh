@@ -11,7 +11,6 @@ if [ ! -d "node_modules" ]; then
 fi
 
 echo "Building nostr-cms..."
-VITE_DEFAULT_RELAY="${VITE_DEFAULT_RELAY:-ws://localhost:3334}" \
 VITE_MASTER_PUBKEY="${VITE_MASTER_PUBKEY:-}" \
   npx vite build --outDir ../../nostr-cms-dist
 
