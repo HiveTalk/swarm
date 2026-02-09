@@ -6,6 +6,9 @@ type: docker
 docker:
   dockerfile: Dockerfile
   context: .
+  buildArgs:
+    VITE_DEFAULT_RELAY: ${WEBSOCKET_URL:-wss://localhost:3334}
+    VITE_MASTER_PUBKEY: ${RELAY_PUBKEY:-}
 
 # Conditionally create volumes based on environment
 # These volumes are only created if the corresponding env vars are set
@@ -41,7 +44,7 @@ service:
   name: swarm-relay
   port: 3334
   healthCheck:
-    path: /
+    path: /api/health
     interval: 30s
     timeout: 10s
     retries: 3
