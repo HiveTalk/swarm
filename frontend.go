@@ -214,28 +214,24 @@ const frontPageTemplate = `<!DOCTYPE html>
             <p>{{.RelayDescription}}</p>
         </div>
 
-                {{if .BlossomEnabled}}
         <div class="card">
-            <h2>🌺 Bouquet Client</h2>
-
+            <h2>📰 Content Manager</h2>
             <div class="endpoint">
                 <div class="endpoint-title">
                     <span class="method get">WEB APP</span>
-                    <span class="path">/bouquet/</span>
+                    <span class="path">/</span>
                 </div>
                 <div class="description">
-                    Modern web interface for managing your blobs. Upload files, organize content,
-                    and publish to Nostr with rich metadata support including audio, video, and images.
+                    Full-featured Nostr CMS for managing blog posts, events, pages,
+                    scheduled publishing, and community content.
                 </div>
                 <div style="margin-top: 1rem; text-align: center;">
-                    <a href="/bouquet/" target="_blank" class="btn" style="background: #be185d; color: white; text-decoration: none; padding: 0.75rem 1.5rem; border-radius: 8px; display: inline-block; font-weight: bold;">
-                        🚀 Launch Bouquet Client
+                    <a href="/" class="btn" style="background: #2563eb; color: white; text-decoration: none; padding: 0.75rem 1.5rem; border-radius: 8px; display: inline-block; font-weight: bold;">
+                        🚀 Launch Content Manager
                     </a>
                 </div>
             </div>
-
         </div>
-        {{end}}
 
         <div class="card">
             <h2>📋 Curator</h2>
@@ -425,18 +421,10 @@ type FrontPageData struct {
 	WellKnownURL     string
 }
 
-func setupFrontPageHandler(relay *khatru.Relay, config Config) {
-	relay.Router().HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// Only serve the front page for GET requests to the root path
-		if r.Method != "GET" || r.URL.Path != "/" {
-			http.NotFound(w, r)
-			return
-		}
-
-		// Check if this is a WebSocket upgrade request
-		if strings.ToLower(r.Header.Get("Upgrade")) == "websocket" {
-			// Let the relay handle WebSocket connections
-			relay.ServeHTTP(w, r)
+func setupRelayInfoHandler(relay *khatru.Relay, config Config) {
+	relay.Router().HandleFunc("/relay-info", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 

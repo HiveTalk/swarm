@@ -197,8 +197,9 @@ func main() {
 		return false, "" // allow
 	})
 
-	// Setup front page handler
-	setupFrontPageHandler(relay, config)
+	// Setup relay info page at /relay-info and CMS SPA at root /
+	setupRelayInfoHandler(relay, config)
+	setupRootHandler(relay)
 
 	// Setup dashboard handlers
 	setupDashboardHandlers(relay, config)
@@ -223,9 +224,6 @@ func main() {
 
 		http.ServeFile(w, r, filePath)
 	})
-
-	// Serve Bouquet client static files
-	setupBouquetHandler(relay)
 
 	setupConvertHandlers(relay, config)
 
@@ -1092,34 +1090,37 @@ func extractSha256FromURL(url string) string {
 	return ""
 }
 
-// setupBouquetHandler serves the Bouquet client static files with SPA support
-func setupBouquetHandler(relay *khatru.Relay) {
-	// Handle /bouquet/ routes with custom SPA handler
-	relay.Router().HandleFunc("/bouquet/", func(w http.ResponseWriter, r *http.Request) {
-		// Get the requested file path (remove /bouquet/ prefix)
-		requestedPath := strings.TrimPrefix(r.URL.Path, "/bouquet/")
+// setupRootHandler serves nostr-cms SPA at root and handles WebSocket relay upgrades
+func setupRootHandler(relay *khatru.Relay) {
+	relay.Router().HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// WebSocket upgrade → Nostr relay
+		if strings.ToLower(r.Header.Get("Upgrade")) == "websocket" {
+			relay.ServeHTTP(w, r)
+			return
+		}
 
-		// If no path or it's a directory, serve index.html
+		// Serve nostr-cms static files
+		requestedPath := strings.TrimPrefix(r.URL.Path, "/")
 		if requestedPath == "" {
 			requestedPath = "index.html"
 		}
 
-		// Check if the requested file exists
-		filePath := "./bouquet-dist/" + requestedPath
-		if _, err := os.Stat(filePath); os.IsNotExist(err) {
-			// File doesn't exist, this is likely a client-side route
-			// Serve index.html to let React Router handle it
-			http.ServeFile(w, r, "./bouquet-dist/index.html")
+		// Prevent directory traversal
+		if strings.Contains(requestedPath, "..") {
+			http.Error(w, "Invalid path", http.StatusBadRequest)
 			return
 		}
 
-		// File exists, serve it directly
-		http.ServeFile(w, r, filePath)
-	})
+		filePath := "./nostr-cms-dist/" + requestedPath
 
-	// Handle /bouquet (without trailing slash) - redirect to /bouquet/
-	relay.Router().HandleFunc("/bouquet", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/bouquet/", http.StatusMovedPermanently)
+		// If the file exists on disk, serve it directly (JS, CSS, images, etc.)
+		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+			http.ServeFile(w, r, filePath)
+			return
+		}
+
+		// SPA fallback: serve index.html for all client-side routes
+		http.ServeFile(w, r, "./nostr-cms-dist/index.html")
 	})
 }
 

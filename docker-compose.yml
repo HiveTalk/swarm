@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        VITE_DEFAULT_RELAY: ${WEBSOCKET_URL:-wss://localhost:3334}
+        VITE_MASTER_PUBKEY: ${RELAY_PUBKEY:-}
     container_name: swarm_relay
     ports:
       - "${RELAY_PORT:-3334}:${RELAY_PORT:-3334}"

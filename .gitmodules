@@ -1,0 +1,4 @@
+[submodule "clients/nostr-cms"]
+	path = clients/nostr-cms
+	url = https://github.com/bitkarrot/nostr-cms.git
+	branch = main

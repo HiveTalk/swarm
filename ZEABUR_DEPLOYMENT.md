@@ -1,5 +1,18 @@
 # Zeabur Deployment Guide
 
+## nostr-cms Build Configuration
+
+The Dockerfile builds the nostr-cms frontend as part of the Docker image. You need to set these build args for your deployment:
+
+| Build Arg | Purpose | Example |
+|-----------|---------|--------|
+| `VITE_DEFAULT_RELAY` | WebSocket URL for the relay | `wss://swarm.hivetalk.org` |
+| `VITE_MASTER_PUBKEY` | Site owner hex pubkey | `8ad8f1f...` |
+
+These are configured in `docker-compose.yml` and default to `${WEBSOCKET_URL}` and `${RELAY_PUBKEY}` from your `.env`.
+
+For Zeabur, set these as environment variables — they'll be picked up during the Docker build.
+
 ## Persistent Data Strategy
 
 ### Problem
@@ -141,7 +154,9 @@ docker exec <container_name> ls -la /app/backups/
 
 ### Monitoring
 
-- Health check endpoint: `http://your-domain:3334/`
+- Health check endpoint: `http://your-domain:3334/api/health`
+- CMS home page: `http://your-domain:3334/`
+- Relay info page: `http://your-domain:3334/relay-info`
 - Logs available in Zeabur dashboard
 - Backup files stored in `/app/backups/` inside container
 - Volume usage visible in Zeabur storage section

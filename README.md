@@ -32,7 +32,7 @@ Additional features we added for production use:
    - Separate configuration for public vs team member allowed kinds
 - **Frontend Enhancements**
    - Added front page with relay and blossom information
-   - Added Bouquet integration, to enable media upload and syncing with other relays
+   - Integrated nostr-cms for full content management (blog, events, scheduled posts, pages)
    - Curator client integration for enhanced content management
 - **Docker Support**
    - Full containerization support with Dockerfile
@@ -193,26 +193,43 @@ For a complete list of all environment variables, see [ENV_VARIABLES.md](ENV_VAR
 
 ## 🚀 Quick Setup
 
-### 1. Build the Bouquet Client
+### 1. Clone with Submodules
 
 ```bash
-# Option A: Use the build script (recommended)
-./build-bouquet.sh
+git clone --recurse-submodules https://github.com/hivetalk/swarm.git
+cd swarm
 
-# Option B: Manual build
-cd clients/bouquet
-pnpm install
-pnpm run build:integration
-cd ../..
+# If already cloned without submodules:
+git submodule update --init --recursive
 ```
 
-### 2. Start the Go Server
+### 2. Build the nostr-cms Client
+
+```bash
+# Set environment variables for the build
+export VITE_DEFAULT_RELAY=wss://yourdomain.com
+export VITE_MASTER_PUBKEY=your_hex_pubkey
+
+# Build the CMS frontend
+./build-nostr-cms.sh
+```
+
+### 3. Start the Go Server
 
 ```bash
 # Build and run the Go server
 go build -o swarm
 ./swarm
 ```
+
+### 4. Access the Application
+
+- **CMS (home page)**: http://localhost:3334/
+- **CMS admin panel**: http://localhost:3334/admin
+- **Relay info page**: http://localhost:3334/relay-info
+- **Relay dashboard**: http://localhost:3334/dashboard
+- **WebSocket relay**: ws://localhost:3334/
+- **Health check**: http://localhost:3334/api/health
 
 If any issues with building for lmdb on ubuntu:
 
@@ -221,7 +238,7 @@ sudo apt-get update
 sudo apt-get install -y liblmdb-dev build-essential
 ```
 
-More details about Bouquet integration can be found in the [BOUQUET_INTEGRATION.md](BOUQUET_INTEGRATION.md) file.
+For the full integration plan and endpoint details, see [SWARM_CMS_INTEGRATION.md](../SWARM_CMS_INTEGRATION.md).
 
 ## Running Docker
 

@@ -1,25 +1,24 @@
-# Multi-stage Dockerfile with Bouquet client build
+# Multi-stage Dockerfile with nostr-cms client build
 
-# Stage 1: Build Bouquet client (use full node image for better memory handling)
-FROM node:20 AS bouquet-builder
+# Stage 1: Build nostr-cms client
+FROM node:20 AS cms-builder
 
-WORKDIR /app/clients/bouquet
+WORKDIR /app/clients/nostr-cms
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Copy package files and install dependencies
+COPY clients/nostr-cms/package.json clients/nostr-cms/package-lock.json* ./
+RUN npm install --silent
 
-# Copy bouquet source
-COPY clients/bouquet/package.json clients/bouquet/pnpm-lock.yaml ./
+# Copy rest of nostr-cms source
+COPY clients/nostr-cms/ ./
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile
-
-# Copy rest of bouquet source
-COPY clients/bouquet/ ./
-
-# Build bouquet with adequate memory
-RUN NODE_OPTIONS='--max-old-space-size=4096' pnpm exec tsc && \
-    NODE_OPTIONS='--max-old-space-size=4096' pnpm exec vite build
+# Build nostr-cms with environment variables
+ARG VITE_DEFAULT_RELAY=wss://localhost:3334
+ARG VITE_MASTER_PUBKEY=
+RUN VITE_DEFAULT_RELAY=${VITE_DEFAULT_RELAY} \
+    VITE_MASTER_PUBKEY=${VITE_MASTER_PUBKEY} \
+    NODE_OPTIONS='--max-old-space-size=4096' \
+    npx vite build --outDir /app/nostr-cms-dist
 
 # Stage 2: Build Go binary
 FROM golang:1.24-alpine AS go-builder
@@ -38,8 +37,8 @@ COPY . .
 
 # Copy public files (including nostr.json backup)
 
-# Copy built bouquet from previous stage
-COPY --from=bouquet-builder /app/bouquet-dist ./bouquet-dist
+# Copy built nostr-cms from previous stage
+COPY --from=cms-builder /app/nostr-cms-dist ./nostr-cms-dist
 
 # Build static binary
 RUN CGO_ENABLED=1 go build -ldflags="-s -w" -o /app/swarm
@@ -68,8 +67,8 @@ RUN if [ -f '/app/public/.well-known/nostr.json' ]; then \
         cp /app/public/.well-known/nostr.json /app/public/.well-known/nostr.json.original; \
     fi
 
-# Copy bouquet dist
-COPY --from=go-builder /app/bouquet-dist /app/bouquet-dist
+# Copy nostr-cms dist
+COPY --from=go-builder /app/nostr-cms-dist /app/nostr-cms-dist
 
 # Create backup script
 COPY <<'EOF' /app/backup.sh
