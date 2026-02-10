@@ -221,14 +221,14 @@ const frontPageTemplate = `<!DOCTYPE html>
             <div class="endpoint">
                 <div class="endpoint-title">
                     <span class="method get">WEB APP</span>
-                    <span class="path">/bouquet/</span>
+                    <span class="path">https://bouquet.slidestr.net/</span>
                 </div>
                 <div class="description">
                     Modern web interface for managing your blobs. Upload files, organize content,
                     and publish to Nostr with rich metadata support including audio, video, and images.
                 </div>
                 <div style="margin-top: 1rem; text-align: center;">
-                    <a href="/bouquet/" target="_blank" class="btn" style="background: #be185d; color: white; text-decoration: none; padding: 0.75rem 1.5rem; border-radius: 8px; display: inline-block; font-weight: bold;">
+                    <a href="https://bouquet.slidestr.net/" target="_blank" class="btn" style="background: #be185d; color: white; text-decoration: none; padding: 0.75rem 1.5rem; border-radius: 8px; display: inline-block; font-weight: bold;">
                         🚀 Launch Bouquet Client
                     </a>
                 </div>

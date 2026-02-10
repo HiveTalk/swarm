@@ -32,7 +32,7 @@ Additional features we added for production use:
    - Separate configuration for public vs team member allowed kinds
 - **Frontend Enhancements**
    - Added front page with relay and blossom information
-   - Added Bouquet integration, to enable media upload and syncing with other relays
+   - External Bouquet link for media upload and syncing with other relays
    - Curator client integration for enhanced content management
 - **Docker Support**
    - Full containerization support with Dockerfile
@@ -193,21 +193,6 @@ For a complete list of all environment variables, see [ENV_VARIABLES.md](ENV_VAR
 
 ## 🚀 Quick Setup
 
-### 1. Build the Bouquet Client
-
-```bash
-# Option A: Use the build script (recommended)
-./build-bouquet.sh
-
-# Option B: Manual build
-cd clients/bouquet
-pnpm install
-pnpm run build:integration
-cd ../..
-```
-
-### 2. Start the Go Server
-
 ```bash
 # Build and run the Go server
 go build -o swarm
@@ -220,8 +205,6 @@ If any issues with building for lmdb on ubuntu:
 sudo apt-get update
 sudo apt-get install -y liblmdb-dev build-essential
 ```
-
-More details about Bouquet integration can be found in the [BOUQUET_INTEGRATION.md](BOUQUET_INTEGRATION.md) file.
 
 ## Running Docker
 

@@ -1,27 +1,4 @@
-# Multi-stage Dockerfile with Bouquet client build
-
-# Stage 1: Build Bouquet client (use full node image for better memory handling)
-FROM node:20 AS bouquet-builder
-
-WORKDIR /app/clients/bouquet
-
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
-# Copy bouquet source
-COPY clients/bouquet/package.json clients/bouquet/pnpm-lock.yaml ./
-
-# Install dependencies
-RUN pnpm install --frozen-lockfile
-
-# Copy rest of bouquet source
-COPY clients/bouquet/ ./
-
-# Build bouquet with adequate memory
-RUN NODE_OPTIONS='--max-old-space-size=4096' pnpm exec tsc && \
-    NODE_OPTIONS='--max-old-space-size=4096' pnpm exec vite build
-
-# Stage 2: Build Go binary
+# Build Go binary
 FROM golang:1.24-alpine AS go-builder
 
 WORKDIR /app
@@ -38,13 +15,10 @@ COPY . .
 
 # Copy public files (including nostr.json backup)
 
-# Copy built bouquet from previous stage
-COPY --from=bouquet-builder /app/bouquet-dist ./bouquet-dist
-
 # Build static binary
 RUN CGO_ENABLED=1 go build -ldflags="-s -w" -o /app/swarm
 
-# Stage 3: Runtime - minimal Alpine image
+# Runtime - minimal Alpine image
 FROM alpine:latest
 
 LABEL "language"="go"
@@ -67,9 +41,6 @@ COPY --from=go-builder /app/templates /app/templates
 RUN if [ -f '/app/public/.well-known/nostr.json' ]; then \
         cp /app/public/.well-known/nostr.json /app/public/.well-known/nostr.json.original; \
     fi
-
-# Copy bouquet dist
-COPY --from=go-builder /app/bouquet-dist /app/bouquet-dist
 
 # Create backup script
 COPY <<'EOF' /app/backup.sh

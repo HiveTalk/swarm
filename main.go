@@ -224,9 +224,6 @@ func main() {
 		http.ServeFile(w, r, filePath)
 	})
 
-	// Serve Bouquet client static files
-	setupBouquetHandler(relay)
-
 	setupConvertHandlers(relay, config)
 
 	// Setup Scheduler - use configured DB path
@@ -1090,37 +1087,6 @@ func extractSha256FromURL(url string) string {
 	}
 
 	return ""
-}
-
-// setupBouquetHandler serves the Bouquet client static files with SPA support
-func setupBouquetHandler(relay *khatru.Relay) {
-	// Handle /bouquet/ routes with custom SPA handler
-	relay.Router().HandleFunc("/bouquet/", func(w http.ResponseWriter, r *http.Request) {
-		// Get the requested file path (remove /bouquet/ prefix)
-		requestedPath := strings.TrimPrefix(r.URL.Path, "/bouquet/")
-
-		// If no path or it's a directory, serve index.html
-		if requestedPath == "" {
-			requestedPath = "index.html"
-		}
-
-		// Check if the requested file exists
-		filePath := "./bouquet-dist/" + requestedPath
-		if _, err := os.Stat(filePath); os.IsNotExist(err) {
-			// File doesn't exist, this is likely a client-side route
-			// Serve index.html to let React Router handle it
-			http.ServeFile(w, r, "./bouquet-dist/index.html")
-			return
-		}
-
-		// File exists, serve it directly
-		http.ServeFile(w, r, filePath)
-	})
-
-	// Handle /bouquet (without trailing slash) - redirect to /bouquet/
-	relay.Router().HandleFunc("/bouquet", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/bouquet/", http.StatusMovedPermanently)
-	})
 }
 
 func setupConvertHandlers(relay *khatru.Relay, config Config) {
