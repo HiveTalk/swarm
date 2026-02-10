@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net/http"
@@ -1097,7 +1098,8 @@ func cmsAvailable() bool {
 }
 
 // buildInjectedIndexHTML reads index.html and injects runtime config (masterPubkey, relayName)
-// so the CMS can read them from window.__SWARM_CONFIG__ without needing build-time env vars.
+// as a <meta> tag so the CMS can read them without needing build-time env vars.
+// Uses <meta> instead of inline <script> to avoid Content-Security-Policy violations.
 func buildInjectedIndexHTML(config Config) ([]byte, error) {
 	raw, err := os.ReadFile("./nostr-cms-dist/index.html")
 	if err != nil {
@@ -1114,8 +1116,8 @@ func buildInjectedIndexHTML(config Config) ([]byte, error) {
 		return nil, err
 	}
 
-	script := []byte(fmt.Sprintf(`<script>window.__SWARM_CONFIG__=%s;</script>`, cfgJSON))
-	injected := bytes.Replace(raw, []byte("</head>"), append(script, []byte("</head>")...), 1)
+	meta := []byte(fmt.Sprintf(`<meta name="swarm-config" content="%s" />`, html.EscapeString(string(cfgJSON))))
+	injected := bytes.Replace(raw, []byte("</head>"), append(meta, []byte("</head>")...), 1)
 	return injected, nil
 }
 
