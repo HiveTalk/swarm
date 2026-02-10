@@ -1096,12 +1096,45 @@ func cmsAvailable() bool {
 	return err == nil && !info.IsDir()
 }
 
+// buildInjectedIndexHTML reads index.html and injects runtime config (masterPubkey, relayName)
+// so the CMS can read them from window.__SWARM_CONFIG__ without needing build-time env vars.
+func buildInjectedIndexHTML(config Config) ([]byte, error) {
+	raw, err := os.ReadFile("./nostr-cms-dist/index.html")
+	if err != nil {
+		return nil, err
+	}
+
+	// Build the config JSON to inject
+	cfgMap := map[string]string{
+		"masterPubkey": config.RelayPubkey,
+		"relayName":    config.RelayName,
+	}
+	cfgJSON, err := json.Marshal(cfgMap)
+	if err != nil {
+		return nil, err
+	}
+
+	script := []byte(fmt.Sprintf(`<script>window.__SWARM_CONFIG__=%s;</script>`, cfgJSON))
+	injected := bytes.Replace(raw, []byte("</head>"), append(script, []byte("</head>")...), 1)
+	return injected, nil
+}
+
 // setupRootHandler serves nostr-cms SPA at root and handles WebSocket relay upgrades.
 // If nostr-cms-dist is not present (relay-only mode), root GET requests redirect to /relay-info.
 func setupRootHandler(relay *khatru.Relay, config Config) {
 	hasCMS := cmsAvailable()
+
+	// Pre-build the injected index.html at startup (read once, serve many)
+	var indexHTML []byte
 	if hasCMS {
-		log.Println("📰 CMS mode: serving nostr-cms at /")
+		var err error
+		indexHTML, err = buildInjectedIndexHTML(config)
+		if err != nil {
+			log.Printf("⚠️  Failed to inject config into index.html: %v (falling back to raw file)", err)
+			indexHTML = nil // will fall back to serving the raw file
+		} else {
+			log.Println("📰 CMS mode: serving nostr-cms at / (runtime config injected)")
+		}
 	} else {
 		log.Println("📡 Relay-only mode: CMS not found, redirecting / to /relay-info")
 	}
@@ -1151,7 +1184,12 @@ func setupRootHandler(relay *khatru.Relay, config Config) {
 			return
 		}
 
-		// SPA fallback: serve index.html for all client-side routes
+		// SPA fallback: serve injected index.html for all client-side routes
+		if indexHTML != nil {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Write(indexHTML)
+			return
+		}
 		http.ServeFile(w, r, "./nostr-cms-dist/index.html")
 	})
 }
