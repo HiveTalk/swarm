@@ -80,6 +80,9 @@ func main() {
 	relay = khatru.NewRelay()
 	config := LoadConfig()
 
+	// Log all environment variables at startup for debugging
+	logEnvironmentVars()
+
 	// Initialize nostr.json with relay pubkey as root if needed
 	if err := initializeNostrJson(config); err != nil {
 		log.Printf("Warning: Failed to initialize nostr.json: %s", err)
@@ -1753,6 +1756,43 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(result)
 	})
+}
+
+// logEnvironmentVars prints all relevant environment variables at startup for debugging
+func logEnvironmentVars() {
+	log.Println("═══════════════════════════════════════════")
+	log.Println("  Runtime Environment Variables")
+	log.Println("═══════════════════════════════════════════")
+
+	vars := []string{
+		"RELAY_NAME", "RELAY_PUBKEY", "RELAY_DESCRIPTION", "RELAY_PORT",
+		"TEAM_DOMAIN", "NPUB_DOMAIN", "DB_ENGINE", "DB_PATH",
+		"POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DB",
+		"DATABASE_URL", "BLOSSOM_ENABLED", "BLOSSOM_PATH",
+		"BLOSSOM_URL", "WEBSOCKET_URL", "ALLOWED_KINDS",
+		"PUBLIC_ALLOWED_KINDS", "TRUSTED_CLIENT_NAME", "TRUSTED_CLIENT_KINDS",
+		"MAX_UPLOAD_SIZE_MB", "ALLOWED_MIRROR_HOSTS",
+		"STORAGE_BACKEND", "S3_ENDPOINT", "S3_BUCKET", "S3_REGION",
+		"S3_PUBLIC_URL", "NIP05_PATH",
+		"VITE_MASTER_PUBKEY", "VITE_DEFAULT_RELAY", "VITE_REMOTE_NOSTR_JSON_URL",
+	}
+
+	for _, v := range vars {
+		val := os.Getenv(v)
+		if val != "" {
+			// Mask sensitive values
+			lower := strings.ToLower(v)
+			if strings.Contains(lower, "password") || strings.Contains(lower, "secret") ||
+				strings.Contains(lower, "database_url") {
+				log.Printf("  %-30s = ***MASKED***", v)
+			} else {
+				log.Printf("  %-30s = %s", v, val)
+			}
+		} else {
+			log.Printf("  %-30s = (not set)", v)
+		}
+	}
+	log.Println("═══════════════════════════════════════════")
 }
 
 // getEnvironmentVars returns a map of environment variables (excluding sensitive ones)
