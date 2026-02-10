@@ -11,8 +11,7 @@ if [ ! -d "node_modules" ]; then
 fi
 
 echo "Building nostr-cms..."
-VITE_MASTER_PUBKEY="${VITE_MASTER_PUBKEY:-}" \
-  npx vite build --outDir ../../nostr-cms-dist
+npx vite build --outDir ../../nostr-cms-dist
 
 cd ../..
 

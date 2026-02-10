@@ -5,7 +5,6 @@ services:
       dockerfile: Dockerfile
       args:
         BUILD_CMS: ${BUILD_CMS:-true}
-        VITE_MASTER_PUBKEY: ${RELAY_PUBKEY:-}
     container_name: swarm_relay
     ports:
       - "${RELAY_PORT:-3334}:${RELAY_PORT:-3334}"

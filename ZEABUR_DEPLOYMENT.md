@@ -8,16 +8,17 @@ Swarm supports two deployment modes controlled by the `BUILD_CMS` build arg:
 
 Deploys the full stack: Nostr relay + nostr-cms content manager at `/`.
 
-The CMS **auto-detects** the relay WebSocket URL from the current domain at runtime,
-so `VITE_DEFAULT_RELAY` is no longer required. The only optional build arg is:
+The CMS is **fully zero-config** on same-domain deployments:
+- Relay URL is auto-detected from the current domain at runtime
+- Admin pubkey is injected by the Go server from `RELAY_PUBKEY` at runtime
 
-| Build Arg | Purpose | Example |
-|-----------|---------|--------|
-| `BUILD_CMS` | Enable CMS build | `true` (default) |
-| `VITE_MASTER_PUBKEY` | Site owner hex pubkey (optional) | `8ad8f1f...` |
+No `VITE_*` build args are needed. The only build arg is:
 
-**Zeabur:** Just deploy the `cms-integration` branch — no environment variables needed for the CMS.
-Optionally set `VITE_MASTER_PUBKEY` if you want the CMS to sync config from a master pubkey.
+| Build Arg | Purpose | Default |
+|-----------|---------|---------|
+| `BUILD_CMS` | Enable CMS build | `true` |
+
+**Zeabur:** Just deploy the `cms-integration` branch and set `RELAY_PUBKEY` — that's it.
 
 **Docker Compose:**
 ```bash

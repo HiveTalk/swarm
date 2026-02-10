@@ -11,7 +11,6 @@
 FROM node:20 AS cms-builder
 
 ARG BUILD_CMS=true
-ARG VITE_MASTER_PUBKEY=
 
 WORKDIR /app
 RUN mkdir -p /app/nostr-cms-dist
@@ -23,7 +22,6 @@ RUN if [ "$BUILD_CMS" = "true" ] && [ -f "/tmp/src/clients/nostr-cms/package.jso
         echo "Building nostr-cms..." && \
         cd /tmp/src/clients/nostr-cms && \
         npm install --silent && \
-        VITE_MASTER_PUBKEY=${VITE_MASTER_PUBKEY} \
         NODE_OPTIONS='--max-old-space-size=4096' \
         npx vite build --outDir /app/nostr-cms-dist; \
     else \

@@ -8,7 +8,6 @@ docker:
   context: .
   buildArgs:
     BUILD_CMS: ${BUILD_CMS:-true}
-    VITE_MASTER_PUBKEY: ${RELAY_PUBKEY:-}
 
 # Conditionally create volumes based on environment
 # These volumes are only created if the corresponding env vars are set
