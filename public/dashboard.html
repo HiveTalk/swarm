@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Swarm Dashboard</title>
     <script src="https://unpkg.com/nostr-tools@2.10.4/lib/nostr.bundle.js"></script>
-    <script src="https://unpkg.com/nostr-login@latest/dist/unpkg.js" data-dark-mode="true" data-methods="extension,connect,readOnly" data-no-banner="true"></script>
+    <script src="/public/js/NostrLogin.js" data-no-banner="true"></script>
     <style>
         * {
             margin: 0;
@@ -185,8 +185,34 @@
             document.dispatchEvent(new CustomEvent('nlLaunch', { detail: 'welcome' }));
         });
 
+        function getSavedNostrPubkey() {
+            try {
+                const accounts = JSON.parse(localStorage.getItem('__nostrlogin_accounts') || '[]');
+                if (Array.isArray(accounts) && accounts.length > 0 && accounts[0].pubkey) {
+                    return accounts[0].pubkey;
+                }
+            } catch (err) {
+                console.error('Failed to parse saved nostr account:', err);
+            }
+            return '';
+        }
+
+        async function attemptRestoreSession() {
+            const savedPubkey = getSavedNostrPubkey();
+            if (!savedPubkey) return;
+            await attemptLogin(savedPubkey, { silent: true });
+        }
+
+        function clearNostrLoginState() {
+            localStorage.removeItem('__nostrlogin_accounts');
+            ['peer_name', 'peer_pubkey', 'peer_npub', 'peer_url', 'peer_lnaddress', 'peer_uuid'].forEach((k) => {
+                localStorage.removeItem(k);
+            });
+        }
+
         // Central login function
-        async function attemptLogin(pubkey) {
+        async function attemptLogin(pubkey, options = {}) {
+            const { silent = false } = options;
             loginError.textContent = '';
             
             try {
@@ -208,18 +234,25 @@
                     
                     // Show unauthorized error in a dialog and flush storage
                     if (response.status === 401) {
-                        alert(error.error || 'Access denied. Only the relay operator can login.');
-                        // Flush storage
-                        localStorage.clear();
-                        sessionStorage.clear();
-                        window.location.reload();
+                        if (!silent) {
+                            alert(error.error || 'Access denied. Only the relay operator can login.');
+                        }
+                        // Clear only nostr-login related keys (avoid wiping unrelated app state)
+                        clearNostrLoginState();
+                        if (!silent) {
+                            window.location.reload();
+                        }
                         return;
                     }
                     
-                    loginError.textContent = error.error || 'Login failed';
+                    if (!silent) {
+                        loginError.textContent = error.error || 'Login failed';
+                    }
                 }
             } catch (err) {
-                loginError.textContent = 'Network error: ' + err.message;
+                if (!silent) {
+                    loginError.textContent = 'Network error: ' + err.message;
+                }
             }
         }
 
@@ -254,26 +287,26 @@
             }
         }
 
-        // Logout
-        document.getElementById('logoutBtn').addEventListener('click', () => {
-            // Trigger nostr-login logout if available
-            if (window.nostrLogin) {
+        // Logout (if a static logout button is present in this page variant)
+        const logoutBtn = document.getElementById('logoutBtn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', () => {
                 document.dispatchEvent(new CustomEvent('nlLogout'));
-            }
-            
-            // Clear all local storage and session storage
-            localStorage.clear();
-            sessionStorage.clear();
-            currentUserPubkey = '';
-            
-            // Show login screen
-            document.getElementById('loginScreen').style.display = 'flex';
-            document.getElementById('dashboard').style.display = 'none';
-            loginError.textContent = '';
-            
-            // Refresh page to ensure clean state
-            window.location.reload();
-        });
+
+                // Clear all local storage and session storage
+                localStorage.clear();
+                sessionStorage.clear();
+                currentUserPubkey = '';
+
+                // Show login screen
+                document.getElementById('loginScreen').style.display = 'flex';
+                document.getElementById('dashboard').style.display = 'none';
+                loginError.textContent = '';
+
+                // Refresh page to ensure clean state
+                window.location.reload();
+            });
+        }
 
         // Utility functions for pubkey display (using nostr-tools)
         window.hexToNpub = function(hex) {
@@ -302,6 +335,9 @@
         window.isValidHex = function(str) {
             return /^[0-9a-fA-F]{64}$/.test(str);
         }
+
+        // Try to restore dashboard access if a nostr account is already saved locally.
+        attemptRestoreSession();
     </script>
 </body>
 </html>

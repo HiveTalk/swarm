@@ -397,9 +397,7 @@
         
         // Logout
         document.getElementById('logoutBtn').addEventListener('click', async () => {
-            if (window.nostrLogin) {
-                document.dispatchEvent(new CustomEvent('nlLogout'));
-            }
+            document.dispatchEvent(new CustomEvent('nlLogout'));
             try {
                 await fetch('/api/dashboard/logout');
             } catch (err) {
