@@ -64,6 +64,10 @@ type Config struct {
 }
 
 func getBlobHashesForPubkey(ctx context.Context, pubkey string) (map[string]struct{}, error) {
+	if !isValidPubkeyHex(pubkey) {
+		return nil, fmt.Errorf("invalid pubkey format")
+	}
+
 	result := make(map[string]struct{})
 
 	events, err := db.QueryEvents(ctx, nostr.Filter{
@@ -86,6 +90,17 @@ func getBlobHashesForPubkey(ctx context.Context, pubkey string) (map[string]stru
 	}
 
 	return result, nil
+}
+
+func isValidPubkeyHex(pubkey string) bool {
+	return len(pubkey) == 64 && isValidHex(pubkey)
+}
+
+func truncatePubkey(pk string) string {
+	if len(pk) <= 8 {
+		return pk
+	}
+	return pk[:8]
 }
 
 type NostrData struct {
@@ -415,19 +430,34 @@ func main() {
 		// Support both /list and /list/{pubkey}
 		pubkey := strings.TrimPrefix(r.URL.Path, "/list")
 		pubkey = strings.Trim(pubkey, "/")
+		logPubkey := "all"
 
 		var allowedHashes map[string]struct{}
 		if pubkey != "" {
+			pubkey = strings.ToLower(pubkey)
+			if !isValidPubkeyHex(pubkey) {
+				http.Error(w, "Invalid pubkey format", http.StatusBadRequest)
+				return
+			}
+
+			logPubkey = truncatePubkey(pubkey)
+
 			var err error
 			allowedHashes, err = getBlobHashesForPubkey(r.Context(), pubkey)
 			if err != nil {
-				log.Printf("Error querying blob index for pubkey %s: %v", pubkey, err)
+				log.Printf("list_blobs blob_index_query_failed pubkey_prefix=%s err=%v", logPubkey, err)
 				http.Error(w, "Failed to query blob index", http.StatusInternalServerError)
+				return
+			}
+
+			if len(allowedHashes) == 0 {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode([]map[string]interface{}{})
 				return
 			}
 		}
 
-		log.Printf("List blobs request for pubkey: %s", pubkey)
+		log.Printf("list_blobs request pubkey_prefix=%s", logPubkey)
 
 		// Read all files from storage backend
 		blobs := []map[string]interface{}{}
@@ -515,7 +545,7 @@ func main() {
 			}
 		}
 
-		log.Printf("Returning %d blobs for pubkey %s", len(blobs), pubkey)
+		log.Printf("list_blobs response count=%d pubkey_prefix=%s", len(blobs), logPubkey)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(blobs)
 	}
