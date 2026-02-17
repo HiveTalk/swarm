@@ -68,7 +68,7 @@ func getBlobHashesForPubkey(ctx context.Context, pubkey string) (map[string]stru
 		return nil, fmt.Errorf("invalid pubkey format")
 	}
 
-	result := make(map[string]struct{})
+	blobHashes := make(map[string]struct{})
 
 	events, err := db.QueryEvents(ctx, nostr.Filter{
 		Kinds:   []int{24242},
@@ -83,13 +83,13 @@ func getBlobHashesForPubkey(ctx context.Context, pubkey string) (map[string]stru
 			if len(tag) >= 2 && tag[0] == "x" {
 				hash := strings.ToLower(strings.TrimSpace(tag[1]))
 				if len(hash) == 64 && isValidHex(hash) {
-					result[hash] = struct{}{}
+					blobHashes[hash] = struct{}{}
 				}
 			}
 		}
 	}
 
-	return result, nil
+	return blobHashes, nil
 }
 
 func isValidPubkeyHex(pubkey string) bool {
