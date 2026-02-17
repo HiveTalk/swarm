@@ -35,6 +35,7 @@
     let _pubkeyHex = null;
     let _loginMethod = null; // 'extension' | 'nsec'
     let _dialogEl = null;
+    const _nativeWindowNostr = window.nostr || null;
 
     // ─── nostr-tools availability check ──────────────────────────────
     function nt() {
@@ -44,6 +45,7 @@
     // ─── Core: set window.nostr for nsec-based login ─────────────────
     function setWindowNostrFromNsec(privkeyHex, pubkeyHex) {
         window.nostr = {
+            __nostrloginLocalNsecShim: true,
             async getPublicKey() {
                 return pubkeyHex;
             },
@@ -113,6 +115,7 @@
 
     // ─── Core: clear account ─────────────────────────────────────
     function clearAccount() {
+        const wasNsecLogin = _loginMethod === 'nsec';
         _privkeyHex = null;
         _pubkeyHex = null;
         _loginMethod = null;
@@ -121,7 +124,14 @@
         ['peer_name', 'peer_pubkey', 'peer_npub', 'peer_url', 'peer_lnaddress', 'peer_uuid'].forEach(k => {
             window.localStorage.removeItem(k);
         });
-        // Don't wipe window.nostr if it was an extension (it belongs to the extension)
+        // Remove nsec signer shim from window.nostr on logout.
+        if (wasNsecLogin && window.nostr && window.nostr.__nostrloginLocalNsecShim) {
+            if (_nativeWindowNostr) {
+                window.nostr = _nativeWindowNostr;
+            } else {
+                delete window.nostr;
+            }
+        }
     }
 
     // ─── Core: fire nlAuth event ─────────────────────────────────────
@@ -195,7 +205,7 @@
                             const picture = content.picture || content.image;
                             if (name || picture) {
                                 storeAccount(pubkey, name, picture);
-                                console.log('[NostrLogin] Profile fetched from relay:', url, name, picture);
+                                console.log('[NostrLogin] Profile fetched from relay:', url);
                                 if (name) window.localStorage.peer_name = name;
                                 if (picture) window.localStorage.peer_url = picture;
                                 updateFloatingButton();
@@ -804,8 +814,29 @@
             const displayName = account.name || window.localStorage.peer_name || 'Nostr Account';
             btn.title = displayName;
 
+            btn.replaceChildren();
+
             if (avatarUrl) {
-                btn.innerHTML = `<img class="nl-fab-avatar" src="${avatarUrl}" alt="${displayName}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'" /><span style="display:none">${NOSTR_SVG_ICON}</span><span class="nl-fab-dot"></span>`;
+                const avatarImg = document.createElement('img');
+                avatarImg.className = 'nl-fab-avatar';
+                avatarImg.alt = displayName;
+                avatarImg.src = avatarUrl;
+
+                const iconFallback = document.createElement('span');
+                iconFallback.style.display = 'none';
+                iconFallback.innerHTML = NOSTR_SVG_ICON;
+
+                avatarImg.onerror = () => {
+                    avatarImg.style.display = 'none';
+                    iconFallback.style.display = 'block';
+                };
+
+                const dot = document.createElement('span');
+                dot.className = 'nl-fab-dot';
+
+                btn.appendChild(avatarImg);
+                btn.appendChild(iconFallback);
+                btn.appendChild(dot);
             } else {
                 btn.innerHTML = NOSTR_SVG_ICON + '<span class="nl-fab-dot"></span>';
             }

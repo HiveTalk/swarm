@@ -203,6 +203,13 @@
             await attemptLogin(savedPubkey, { silent: true });
         }
 
+        function clearNostrLoginState() {
+            localStorage.removeItem('__nostrlogin_accounts');
+            ['peer_name', 'peer_pubkey', 'peer_npub', 'peer_url', 'peer_lnaddress', 'peer_uuid'].forEach((k) => {
+                localStorage.removeItem(k);
+            });
+        }
+
         // Central login function
         async function attemptLogin(pubkey, options = {}) {
             const { silent = false } = options;
@@ -230,9 +237,8 @@
                         if (!silent) {
                             alert(error.error || 'Access denied. Only the relay operator can login.');
                         }
-                        // Flush storage (stale saved account/session)
-                        localStorage.clear();
-                        sessionStorage.clear();
+                        // Clear only nostr-login related keys (avoid wiping unrelated app state)
+                        clearNostrLoginState();
                         if (!silent) {
                             window.location.reload();
                         }
