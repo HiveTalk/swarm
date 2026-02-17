@@ -63,6 +63,26 @@ type Config struct {
 	S3PublicURL    string
 }
 
+// resolveDashboardAdminPubkey picks the operator key for dashboard auth.
+// Priority: in-memory data("_"), local public/.well-known/nostr.json("_"), then RELAY_PUBKEY fallback.
+func resolveDashboardAdminPubkey(config Config) string {
+	if pk, ok := data.Names["_"]; ok && pk != "" {
+		return pk
+	}
+
+	body, err := os.ReadFile("./public/.well-known/nostr.json")
+	if err == nil {
+		var localData NostrData
+		if err := json.Unmarshal(body, &localData); err == nil {
+			if pk, ok := localData.Names["_"]; ok && pk != "" {
+				return pk
+			}
+		}
+	}
+
+	return config.RelayPubkey
+}
+
 func getBlobHashesForPubkey(ctx context.Context, pubkey string) (map[string]struct{}, error) {
 	if !isValidPubkeyHex(pubkey) {
 		return nil, fmt.Errorf("invalid pubkey format")
@@ -1467,22 +1487,11 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 			return
 		}
 
-		// Find the "_" user in nostr.json
-		adminPubkey := ""
-		for name, pk := range data.Names {
-			if name == "_" {
-				adminPubkey = pk
-				break
-			}
-		}
-
-		// Fallback to config.RelayPubkey if "_" not found (for safety/backward compatibility)
-		if adminPubkey == "" {
-			adminPubkey = config.RelayPubkey
-		}
+		adminPubkey := resolveDashboardAdminPubkey(config)
 
 		// Validate pubkey against admin pubkey
 		if req.Pubkey != adminPubkey {
+			log.Printf("Dashboard login denied: req pubkey %s... does not match admin %s...", truncatePubkey(req.Pubkey), truncatePubkey(adminPubkey))
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Access denied. Only the relay operator ('_' in nostr.json) can login."})
@@ -1529,16 +1538,7 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 		}
 
 		// Verify cookie value matches admin pubkey
-		adminPubkey := ""
-		for name, pk := range data.Names {
-			if name == "_" {
-				adminPubkey = pk
-				break
-			}
-		}
-		if adminPubkey == "" {
-			adminPubkey = config.RelayPubkey
-		}
+		adminPubkey := resolveDashboardAdminPubkey(config)
 
 		if cookie.Value != adminPubkey {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
