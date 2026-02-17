@@ -156,20 +156,10 @@ func (s *S3Storage) ListBlobs(ctx context.Context) ([]BlobInfo, error) {
 					blobURL = s.publicURL + "/" + key
 				}
 
-				// Get content type from S3 object metadata
-				contentType := "application/octet-stream"
-				headResult, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
-					Bucket: aws.String(s.bucket),
-					Key:    aws.String(key),
-				})
-				if err == nil && headResult.ContentType != nil {
-					contentType = *headResult.ContentType
-				}
-
 				blobs = append(blobs, BlobInfo{
 					SHA256:   key,
 					Size:     aws.ToInt64(obj.Size),
-					Type:     contentType,
+					Type:     "application/octet-stream",
 					URL:      blobURL,
 					Uploaded: obj.LastModified.Unix(),
 				})

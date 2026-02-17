@@ -63,6 +63,31 @@ type Config struct {
 	S3PublicURL    string
 }
 
+func getBlobHashesForPubkey(ctx context.Context, pubkey string) (map[string]struct{}, error) {
+	result := make(map[string]struct{})
+
+	events, err := db.QueryEvents(ctx, nostr.Filter{
+		Kinds:   []int{24242},
+		Authors: []string{pubkey},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	for evt := range events {
+		for _, tag := range evt.Tags {
+			if len(tag) >= 2 && tag[0] == "x" {
+				hash := strings.ToLower(strings.TrimSpace(tag[1]))
+				if len(hash) == 64 && isValidHex(hash) {
+					result[hash] = struct{}{}
+				}
+			}
+		}
+	}
+
+	return result, nil
+}
+
 type NostrData struct {
 	Names  map[string]string   `json:"names"`
 	Relays map[string][]string `json:"relays"`
@@ -74,6 +99,22 @@ var db DBBackend
 var fs afero.Fs
 var config Config
 var s3Storage *S3Storage
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, Origin")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
 
 func main() {
 	relay = khatru.NewRelay()
@@ -252,7 +293,7 @@ func main() {
 		// Configure HTTP server with timeouts suitable for large file uploads
 		server := &http.Server{
 			Addr:              ":" + config.RelayPort,
-			Handler:           relay,
+			Handler:           corsMiddleware(relay),
 			ReadTimeout:       15 * time.Minute, // Increased to 15 minutes for very large files
 			WriteTimeout:      15 * time.Minute, // Increased to 15 minutes
 			IdleTimeout:       5 * time.Minute,  // Increased idle timeout
@@ -365,17 +406,25 @@ func main() {
 	})
 
 	// Add custom list endpoint for Sakura health checks
-	relay.Router().HandleFunc("/list/", func(w http.ResponseWriter, r *http.Request) {
+	listHandler := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		// Extract pubkey from URL path
-		pubkey := strings.TrimPrefix(r.URL.Path, "/list/")
-		if pubkey == "" {
-			http.Error(w, "Missing pubkey", http.StatusBadRequest)
-			return
+		// Support both /list and /list/{pubkey}
+		pubkey := strings.TrimPrefix(r.URL.Path, "/list")
+		pubkey = strings.Trim(pubkey, "/")
+
+		var allowedHashes map[string]struct{}
+		if pubkey != "" {
+			var err error
+			allowedHashes, err = getBlobHashesForPubkey(r.Context(), pubkey)
+			if err != nil {
+				log.Printf("Error querying blob index for pubkey %s: %v", pubkey, err)
+				http.Error(w, "Failed to query blob index", http.StatusInternalServerError)
+				return
+			}
 		}
 
 		log.Printf("List blobs request for pubkey: %s", pubkey)
@@ -390,6 +439,11 @@ func main() {
 				log.Printf("Error listing S3 blobs: %v", err)
 			} else {
 				for _, blob := range s3Blobs {
+					if pubkey != "" {
+						if _, ok := allowedHashes[strings.ToLower(blob.SHA256)]; !ok {
+							continue
+						}
+					}
 					blobs = append(blobs, map[string]interface{}{
 						"sha256":   blob.SHA256,
 						"size":     blob.Size,
@@ -424,6 +478,12 @@ func main() {
 								}
 
 								if isValidHash {
+									if pubkey != "" {
+										if _, ok := allowedHashes[strings.ToLower(fileName)]; !ok {
+											continue
+										}
+									}
+
 									// Detect MIME type by reading the first 512 bytes
 									contentType := "application/octet-stream" // Default fallback
 									filePath := *config.BlossomPath + fileName
@@ -458,7 +518,9 @@ func main() {
 		log.Printf("Returning %d blobs for pubkey %s", len(blobs), pubkey)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(blobs)
-	})
+	}
+	relay.Router().HandleFunc("/list", listHandler)
+	relay.Router().HandleFunc("/list/", listHandler)
 
 	// Add custom mirror endpoint handler for Sakura compatibility
 	relay.Router().HandleFunc("/mirror", func(w http.ResponseWriter, r *http.Request) {
@@ -566,7 +628,7 @@ func main() {
 	// Configure HTTP server with timeouts suitable for large file uploads
 	server := &http.Server{
 		Addr:              ":" + config.RelayPort,
-		Handler:           relay,
+		Handler:           corsMiddleware(relay),
 		ReadTimeout:       15 * time.Minute, // Increased to 15 minutes for very large files
 		WriteTimeout:      15 * time.Minute, // Increased to 15 minutes
 		IdleTimeout:       5 * time.Minute,  // Increased idle timeout
