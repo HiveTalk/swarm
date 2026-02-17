@@ -451,32 +451,9 @@ func main() {
 		pubkey := strings.TrimPrefix(r.URL.Path, "/list")
 		pubkey = strings.Trim(pubkey, "/")
 		logPubkey := "all"
-
-		var allowedHashes map[string]struct{}
 		if pubkey != "" {
-			pubkey = strings.ToLower(pubkey)
-			if !isValidPubkeyHex(pubkey) {
-				http.Error(w, "Invalid pubkey format", http.StatusBadRequest)
-				return
-			}
-
-			logPubkey = truncatePubkey(pubkey)
-
-			var err error
-			allowedHashes, err = getBlobHashesForPubkey(r.Context(), pubkey)
-			if err != nil {
-				log.Printf("list_blobs blob_index_query_failed pubkey_prefix=%s err=%v", logPubkey, err)
-				http.Error(w, "Failed to query blob index", http.StatusInternalServerError)
-				return
-			}
-
-			if len(allowedHashes) == 0 {
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode([]map[string]interface{}{})
-				return
-			}
+			logPubkey = truncatePubkey(strings.ToLower(pubkey))
 		}
-
 		log.Printf("list_blobs request pubkey_prefix=%s", logPubkey)
 
 		// Read all files from storage backend
@@ -489,11 +466,6 @@ func main() {
 				log.Printf("Error listing S3 blobs: %v", err)
 			} else {
 				for _, blob := range s3Blobs {
-					if pubkey != "" {
-						if _, ok := allowedHashes[strings.ToLower(blob.SHA256)]; !ok {
-							continue
-						}
-					}
 					blobs = append(blobs, map[string]interface{}{
 						"sha256":   blob.SHA256,
 						"size":     blob.Size,
@@ -528,12 +500,6 @@ func main() {
 								}
 
 								if isValidHash {
-									if pubkey != "" {
-										if _, ok := allowedHashes[strings.ToLower(fileName)]; !ok {
-											continue
-										}
-									}
-
 									// Detect MIME type by reading the first 512 bytes
 									contentType := "application/octet-stream" // Default fallback
 									filePath := *config.BlossomPath + fileName
