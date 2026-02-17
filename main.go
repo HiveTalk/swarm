@@ -812,14 +812,19 @@ func (rl *rateLimiter) isAllowed(key string) bool {
 
 // Global rate limiters
 var (
-	pubkeyRateLimit = newRateLimiter(50, time.Minute)   // 50 events per minute per pubkey
-	ipRateLimit     = newRateLimiter(100, time.Minute)  // 100 events per minute per IP
-	connRateLimit   = newRateLimiter(20, time.Minute*2) // 20 connections per 2 minutes per IP
-	queryRateLimit  = newRateLimiter(300, time.Minute)  // 300 queries per minute per IP
+	pubkeyRateLimit *rateLimiter
+	ipRateLimit     *rateLimiter
+	connRateLimit   *rateLimiter
+	queryRateLimit  *rateLimiter
 )
 
 // applySpamProtection applies rate limiting and spam protection policies
 func applySpamProtection(relay *khatru.Relay, config Config) {
+	pubkeyRateLimit = newRateLimiterFromEnv("PUBKEY_RATE_LIMIT", time.Minute)
+	ipRateLimit = newRateLimiterFromEnv("IP_RATE_LIMIT", time.Minute)
+	connRateLimit = newRateLimiterFromEnv("CONN_RATE_LIMIT", 2*time.Minute)
+	queryRateLimit = newRateLimiterFromEnv("QUERY_RATE_LIMIT", time.Minute)
+
 	// Rate limit events by pubkey (applies to all users)
 	relay.RejectEvent = append(relay.RejectEvent, func(ctx context.Context, event *nostr.Event) (reject bool, msg string) {
 		// Check if user is team member (more lenient limits)
@@ -833,7 +838,7 @@ func applySpamProtection(relay *khatru.Relay, config Config) {
 
 		// Apply stricter rate limits to non-team members
 		if !isTeamMember {
-			if !pubkeyRateLimit.isAllowed(event.PubKey) {
+			if pubkeyRateLimit != nil && !pubkeyRateLimit.isAllowed(event.PubKey) {
 				return true, "rate-limited: too many events from this pubkey, slow down please"
 			}
 		}
@@ -844,7 +849,7 @@ func applySpamProtection(relay *khatru.Relay, config Config) {
 	// Rate limit events by IP
 	relay.RejectEvent = append(relay.RejectEvent, func(ctx context.Context, event *nostr.Event) (reject bool, msg string) {
 		ip := khatru.GetIP(ctx)
-		if ip != "" && !ipRateLimit.isAllowed(ip) {
+		if ip != "" && ipRateLimit != nil && !ipRateLimit.isAllowed(ip) {
 			return true, "rate-limited: too many events from this IP, slow down please"
 		}
 		return false, ""
@@ -852,6 +857,9 @@ func applySpamProtection(relay *khatru.Relay, config Config) {
 
 	// Rate limit connections
 	relay.RejectConnection = append(relay.RejectConnection, func(r *http.Request) bool {
+		if connRateLimit == nil {
+			return false
+		}
 		ip := khatru.GetIPFromRequest(r)
 		return !connRateLimit.isAllowed(ip)
 	})
@@ -859,7 +867,7 @@ func applySpamProtection(relay *khatru.Relay, config Config) {
 	// Rate limit queries/filters
 	relay.RejectFilter = append(relay.RejectFilter, func(ctx context.Context, filter nostr.Filter) (reject bool, msg string) {
 		ip := khatru.GetIP(ctx)
-		if ip != "" && !queryRateLimit.isAllowed(ip) {
+		if ip != "" && queryRateLimit != nil && !queryRateLimit.isAllowed(ip) {
 			return true, "rate-limited: too many queries from this IP"
 		}
 		return false, ""
@@ -873,8 +881,11 @@ func applySpamProtection(relay *khatru.Relay, config Config) {
 		return false, ""
 	})
 
-	log.Println("Applied spam protection policies with rate limiting")
-	log.Printf("Rate limits: %d events/min per pubkey, %d events/min per IP", pubkeyRateLimit.limit, ipRateLimit.limit)
+	log.Println("Applied spam protection policies with configurable rate limiting")
+	logRateLimiterConfig("PUBKEY_RATE_LIMIT", pubkeyRateLimit, "events/min per pubkey")
+	logRateLimiterConfig("IP_RATE_LIMIT", ipRateLimit, "events/min per IP")
+	logRateLimiterConfig("CONN_RATE_LIMIT", connRateLimit, "connections/2min per IP")
+	logRateLimiterConfig("QUERY_RATE_LIMIT", queryRateLimit, "queries/min per IP")
 }
 
 func getEnv(key string) string {
@@ -912,6 +923,42 @@ func getEnvIntWithDefault(key string, defaultValue int) int {
 		return defaultValue
 	}
 	return intValue
+}
+
+func getEnvOptionalInt(key string) *int {
+	value, exists := os.LookupEnv(key)
+	if !exists || strings.TrimSpace(value) == "" {
+		return nil
+	}
+
+	intValue, err := strconv.Atoi(value)
+	if err != nil {
+		log.Printf("Warning: Invalid integer value '%s' for %s, disabling this rate limiter", value, key)
+		return nil
+	}
+
+	if intValue <= 0 {
+		log.Printf("Warning: Non-positive value %d for %s, disabling this rate limiter", intValue, key)
+		return nil
+	}
+
+	return &intValue
+}
+
+func newRateLimiterFromEnv(key string, window time.Duration) *rateLimiter {
+	limit := getEnvOptionalInt(key)
+	if limit == nil {
+		return nil
+	}
+	return newRateLimiter(*limit, window)
+}
+
+func logRateLimiterConfig(envKey string, rl *rateLimiter, description string) {
+	if rl == nil {
+		log.Printf("%s not set: %s rate limit disabled", envKey, description)
+		return
+	}
+	log.Printf("%s=%d: %s enabled", envKey, rl.limit, description)
 }
 
 func getEnvWithDefaultPtr(key string, defaultValue string) *string {

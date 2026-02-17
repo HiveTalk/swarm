@@ -56,6 +56,13 @@ NIP05_PATH=public/.well-known/nostr.json
 ALLOWED_KINDS=""
 PUBLIC_ALLOWED_KINDS=""
 
+# === SPAM RATE LIMITING (optional) ===
+# If unset or empty, each limiter is disabled
+# PUBKEY_RATE_LIMIT=50
+# IP_RATE_LIMIT=100
+# CONN_RATE_LIMIT=20
+# QUERY_RATE_LIMIT=300
+
 # === TRUSTED CLIENT ===
 TRUSTED_CLIENT_NAME=""
 TRUSTED_CLIENT_KINDS=""

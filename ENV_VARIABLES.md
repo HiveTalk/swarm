@@ -98,6 +98,17 @@ Use these when you want to store media in S3-compatible storage instead of the l
 | `ALLOWED_KINDS` | Comma-separated list of event kinds allowed for team members | `""` (all kinds) |
 | `PUBLIC_ALLOWED_KINDS` | Comma-separated list of event kinds allowed for public users | `""` (none) |
 
+## Spam Rate Limiting (Optional)
+
+If a rate-limit variable is unset, empty, invalid, or non-positive, that specific limiter is disabled.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PUBKEY_RATE_LIMIT` | Max events per minute per pubkey (non-team users) | disabled |
+| `IP_RATE_LIMIT` | Max events per minute per IP | disabled |
+| `CONN_RATE_LIMIT` | Max websocket connections per 2 minutes per IP | disabled |
+| `QUERY_RATE_LIMIT` | Max queries per minute per IP | disabled |
+
 ## Trusted Client Override
 
 | Variable | Description | Default |
