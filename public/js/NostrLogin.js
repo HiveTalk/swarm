@@ -216,10 +216,11 @@
                             const name = content.name || content.display_name;
                             const picture = content.picture || content.image;
                             if (name || picture) {
-                                storeAccount(pubkey, name, picture);
+                                const safePicture = isSafeAvatarUrl(picture) ? picture : undefined;
+                                storeAccount(pubkey, name, safePicture);
                                 console.log('[NostrLogin] Profile fetched from relay:', url);
                                 if (name) window.localStorage.peer_name = name;
-                                if (picture) window.localStorage.peer_url = picture;
+                                if (safePicture) window.localStorage.peer_url = safePicture;
                                 updateFloatingButton();
                             }
                             // Close all sockets
@@ -633,7 +634,8 @@
             const npubEl = dialog.querySelector('#nl-profile-npub');
 
             const displayName = account.name || window.localStorage.peer_name || account.pubkey.slice(0, 10) + '...';
-            const avatarUrl = account.picture || window.localStorage.peer_url || '';
+            const rawAvatarUrl = account.picture || window.localStorage.peer_url || '';
+            const avatarUrl = isSafeAvatarUrl(rawAvatarUrl) ? rawAvatarUrl : '';
 
             nameEl.textContent = displayName;
             if (avatarUrl) {
