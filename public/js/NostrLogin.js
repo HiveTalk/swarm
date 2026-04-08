@@ -33,9 +33,19 @@
                 return url.href;
             }
             if (protocol === 'data:') {
-                // Allow only data:image/* for avatars
-                if (trimmed.toLowerCase().startsWith('data:image/')) {
-                    return trimmed;
+                // Allow only safe data:image/* (exclude SVG/active formats) for avatars
+                const lower = trimmed.toLowerCase();
+                if (lower.startsWith('data:image/')) {
+                    // Explicitly allow only a small set of common raster formats
+                    if (
+                        lower.startsWith('data:image/png') ||
+                        lower.startsWith('data:image/jpeg') ||
+                        lower.startsWith('data:image/jpg') ||
+                        lower.startsWith('data:image/gif') ||
+                        lower.startsWith('data:image/webp')
+                    ) {
+                        return trimmed;
+                    }
                 }
             }
         } catch (e) {
