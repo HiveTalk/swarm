@@ -30,8 +30,8 @@
             const url = new URL(trimmed, window.location.origin);
             const protocol = url.protocol.toLowerCase();
 
-            // Allow only same-origin HTTPS/HTTP URLs for avatar resources.
-            // This prevents loading attacker-controlled remote URLs from profile metadata.
+            // Allow HTTPS/HTTP URLs for avatar resources (external profile images are expected).
+            // data: and other exotic protocols are handled separately or rejected.
             if (protocol === 'https:' || protocol === 'http:') {
                 return url.href;
             }
