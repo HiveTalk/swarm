@@ -32,7 +32,7 @@
 
             // Allow only same-origin HTTPS/HTTP URLs for avatar resources.
             // This prevents loading attacker-controlled remote URLs from profile metadata.
-            if ((protocol === 'https:' || protocol === 'http:') && url.origin === window.location.origin) {
+            if (protocol === 'https:' || protocol === 'http:') {
                 return url.href;
             }
 
