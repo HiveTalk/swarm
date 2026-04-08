@@ -21,18 +21,28 @@
         return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
-    // ─── Utility: validate avatar URL ────────────────────────────────
-    function isSafeAvatarUrl(url) {
-        if (!url || typeof url !== 'string') return false;
+    // ─── Utility: sanitize avatar URL ────────────────────────────────
+    function sanitizeAvatarUrl(rawUrl) {
+        if (typeof rawUrl !== 'string') return '';
+        const trimmed = rawUrl.trim();
+        if (!trimmed) return '';
         try {
-            const parsed = new URL(url, window.location.origin);
-            const allowedProtocols = ['http:', 'https:', 'data:'];
-            return allowedProtocols.includes(parsed.protocol);
+            const url = new URL(trimmed, window.location.origin);
+            const protocol = url.protocol.toLowerCase();
+            if (protocol === 'http:' || protocol === 'https:' || protocol === 'blob:') {
+                return url.href;
+            }
+            if (protocol === 'data:') {
+                // Allow only data:image/* for avatars
+                if (trimmed.toLowerCase().startsWith('data:image/')) {
+                    return trimmed;
+                }
+            }
         } catch (e) {
-            return false;
+            // Invalid URL – treated as unsafe
         }
+        return '';
     }
-
     // ─── Utility: hex to bytes ───────────────────────────────────────
     function hexToBytes(hex) {
         const bytes = new Uint8Array(hex.length / 2);
@@ -216,7 +226,7 @@
                             const name = content.name || content.display_name;
                             const picture = content.picture || content.image;
                             if (name || picture) {
-                                const safePicture = isSafeAvatarUrl(picture) ? picture : undefined;
+                                const safePicture = sanitizeAvatarUrl(picture) || undefined;
                                 storeAccount(pubkey, name, safePicture);
                                 console.log('[NostrLogin] Profile fetched from relay:', url);
                                 if (name) window.localStorage.peer_name = name;
@@ -635,7 +645,7 @@
 
             const displayName = account.name || window.localStorage.peer_name || account.pubkey.slice(0, 10) + '...';
             const rawAvatarUrl = account.picture || window.localStorage.peer_url || '';
-            const avatarUrl = isSafeAvatarUrl(rawAvatarUrl) ? rawAvatarUrl : '';
+            const avatarUrl = sanitizeAvatarUrl(rawAvatarUrl);
 
             nameEl.textContent = displayName;
             if (avatarUrl) {
@@ -825,7 +835,7 @@
         const account = getCurrentAccount();
         if (account) {
             const rawAvatarUrl = account.picture || window.localStorage.peer_url || '';
-            const avatarUrl = isSafeAvatarUrl(rawAvatarUrl) ? rawAvatarUrl : '';
+            const avatarUrl = sanitizeAvatarUrl(rawAvatarUrl);
             const displayName = account.name || window.localStorage.peer_name || 'Nostr Account';
             btn.title = displayName;
 
@@ -836,7 +846,6 @@
                 avatarImg.className = 'nl-fab-avatar';
                 avatarImg.alt = displayName;
                 avatarImg.src = avatarUrl;
-
                 const iconFallback = document.createElement('span');
                 iconFallback.style.display = 'none';
                 iconFallback.innerHTML = NOSTR_SVG_ICON;
