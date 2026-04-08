@@ -21,6 +21,18 @@
         return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
+    // ─── Utility: validate avatar URL ────────────────────────────────
+    function isSafeAvatarUrl(url) {
+        if (!url || typeof url !== 'string') return false;
+        try {
+            const parsed = new URL(url, window.location.origin);
+            const allowedProtocols = ['http:', 'https:', 'data:'];
+            return allowedProtocols.includes(parsed.protocol);
+        } catch (e) {
+            return false;
+        }
+    }
+
     // ─── Utility: hex to bytes ───────────────────────────────────────
     function hexToBytes(hex) {
         const bytes = new Uint8Array(hex.length / 2);
@@ -810,7 +822,8 @@
 
         const account = getCurrentAccount();
         if (account) {
-            const avatarUrl = account.picture || window.localStorage.peer_url || '';
+            const rawAvatarUrl = account.picture || window.localStorage.peer_url || '';
+            const avatarUrl = isSafeAvatarUrl(rawAvatarUrl) ? rawAvatarUrl : '';
             const displayName = account.name || window.localStorage.peer_name || 'Nostr Account';
             btn.title = displayName;
 
