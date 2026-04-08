@@ -29,9 +29,13 @@
         try {
             const url = new URL(trimmed, window.location.origin);
             const protocol = url.protocol.toLowerCase();
-            if (protocol === 'http:' || protocol === 'https:' || protocol === 'blob:') {
+
+            // Allow only same-origin HTTPS/HTTP URLs for avatar resources.
+            // This prevents loading attacker-controlled remote URLs from profile metadata.
+            if ((protocol === 'https:' || protocol === 'http:') && url.origin === window.location.origin) {
                 return url.href;
             }
+
             if (protocol === 'data:') {
                 // Allow only data:image/* for avatars
                 if (trimmed.toLowerCase().startsWith('data:image/')) {
