@@ -46,10 +46,10 @@ services:
       ALLOWED_MIRROR_HOSTS: ${ALLOWED_MIRROR_HOSTS:-}
       
       # Rate limiting (unset/empty = disabled)
-      PUBKEY_RATE_LIMIT: ${PUBKEY_RATE_LIMIT:-}
-      IP_RATE_LIMIT: ${IP_RATE_LIMIT:-}
-      CONN_RATE_LIMIT: ${CONN_RATE_LIMIT:-}
-      QUERY_RATE_LIMIT: ${QUERY_RATE_LIMIT:-}
+      PUBKEY_RATE_LIMIT: ${PUBKEY_RATE_LIMIT:-5}
+      IP_RATE_LIMIT: ${IP_RATE_LIMIT:-10}
+      CONN_RATE_LIMIT: ${CONN_RATE_LIMIT:-2}
+      QUERY_RATE_LIMIT: ${QUERY_RATE_LIMIT:-100}
       
       # S3/Tigris Storage (optional - defaults to filesystem)
       STORAGE_BACKEND: ${STORAGE_BACKEND:-filesystem}
