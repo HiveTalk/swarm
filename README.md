@@ -232,7 +232,7 @@ If you change `RELAY_PORT` in `.env`, update the `-p` mapping accordingly (e.g. 
 
 ### Run with docker-compose (recommended)
 
-The `docker-compose.yml` includes both Postgres and the Swarm relay. Environment variables are read from a `.env` file with sensible defaults.
+The `docker-compose.yml` runs the Swarm relay using the badger database engine (no external database required). Environment variables are read from a `.env` file with sensible defaults.
 
 ```bash
 # 1. Copy and customize environment variables

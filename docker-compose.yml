@@ -45,6 +45,12 @@ services:
       # Mirror endpoint (blank = disabled)
       ALLOWED_MIRROR_HOSTS: ${ALLOWED_MIRROR_HOSTS:-}
       
+      # Rate limiting (unset/empty = disabled)
+      PUBKEY_RATE_LIMIT: ${PUBKEY_RATE_LIMIT:-}
+      IP_RATE_LIMIT: ${IP_RATE_LIMIT:-}
+      CONN_RATE_LIMIT: ${CONN_RATE_LIMIT:-}
+      QUERY_RATE_LIMIT: ${QUERY_RATE_LIMIT:-}
+      
       # S3/Tigris Storage (optional - defaults to filesystem)
       STORAGE_BACKEND: ${STORAGE_BACKEND:-filesystem}
       S3_ENDPOINT: ${S3_ENDPOINT:-}
