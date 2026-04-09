@@ -662,7 +662,7 @@
             const avatarUrl = sanitizeAvatarUrl(rawAvatarUrl);
 
             nameEl.textContent = displayName;
-            if (avatarUrl) {
+            if (avatarUrl && (avatarUrl.startsWith('https://') || avatarUrl.startsWith('http://'))) {
                 avatarEl.src = avatarUrl;
                 avatarEl.style.display = 'block';
             } else {
@@ -855,7 +855,7 @@
 
             btn.replaceChildren();
 
-            if (avatarUrl) {
+            if (avatarUrl && (avatarUrl.startsWith('https://') || avatarUrl.startsWith('http://'))) {
                 const avatarImg = document.createElement('img');
                 avatarImg.className = 'nl-fab-avatar';
                 avatarImg.alt = displayName;
