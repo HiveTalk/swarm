@@ -29,9 +29,13 @@
         try {
             const url = new URL(trimmed, window.location.origin);
             const protocol = url.protocol.toLowerCase();
-            if (protocol === 'http:' || protocol === 'https:' || protocol === 'blob:') {
+
+            // Allow HTTPS/HTTP URLs for avatar resources (external profile images are expected).
+            // data: and other exotic protocols are handled separately or rejected.
+            if (protocol === 'https:' || protocol === 'http:') {
                 return url.href;
             }
+
             if (protocol === 'data:') {
                 // Allow only safe data:image/* (exclude SVG/active formats) for avatars
                 const lower = trimmed.toLowerCase();
