@@ -179,6 +179,101 @@ Swarm includes comprehensive rate limiting and spam protection:
 
 For a complete list of all environment variables, see [ENV_VARIABLES.md](ENV_VARIABLES.md).
 
+## Single-Domain Setup with `nostr-cms`
+
+You can run `swarm` and `nostr-cms` on **one domain**. This avoids pointing separate domains at each service.
+
+### Guided setup (recommended)
+
+From the `swarm` repository, run:
+
+```bash
+./setup/install-meetup-space.sh --mode prompt
+```
+
+It asks for a few values (domain, relay name, relay pubkey) and generates:
+
+- `swarm/.env`
+- `../nostr-cms/.env.local`
+
+Then use the reverse-proxy template at:
+
+- `setup/nginx-meetup-space.conf`
+
+### Install modes
+
+You can use one script with three setup modes:
+
+```bash
+./setup/install-meetup-space.sh --mode manual
+./setup/install-meetup-space.sh --mode prompt
+./setup/install-meetup-space.sh --mode agent --domain meetup.example.com --relay-pubkey <64-char-hex> --force
+```
+
+- `manual`: prints step-by-step instructions only (no files changed)
+- `prompt`: interactive questions for operators
+- `agent`: non-interactive mode for automation/agents
+
+Legacy command is still supported and maps to prompt mode:
+
+```bash
+./setup/meetup-space-init.sh
+```
+
+### Recommended routing
+
+- `https://your-domain.com/` → `nostr-cms` (static frontend)
+- `https://your-domain.com/api/*` → `swarm` HTTP API
+- `wss://your-domain.com/` (WebSocket upgrade) → `swarm` relay
+
+### Nginx example
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+map $http_upgrade $root_upstream {
+    default nostr_cms_backend;
+    websocket swarm_backend;
+}
+
+upstream swarm_backend {
+    server 127.0.0.1:3334;
+}
+
+upstream nostr_cms_backend {
+    server 127.0.0.1:5173;
+}
+
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
+
+    location /api/ {
+        proxy_pass http://swarm_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://$root_upstream;
+    }
+}
+```
+
+### `nostr-cms` env for single-domain mode
+
+In `nostr-cms`, leave `VITE_SWARM_API_URL` unset so it defaults to `/api`. Optionally leave `VITE_DEFAULT_RELAY` unset so it auto-derives the same host for WebSocket relay connections.
+
 ## Compiling the Application
 
 1. Clone the repository:
