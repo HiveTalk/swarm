@@ -1433,8 +1433,29 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 		http.ServeFile(w, r, "./public/dashboard.html")
 	})
 
+	registerAdminAPI := func(path string, handler http.HandlerFunc) {
+		relay.Router().HandleFunc("/api/dashboard"+path, handler)
+		relay.Router().HandleFunc("/api/admin"+path, handler)
+	}
+
+	requireAdminSession := func(w http.ResponseWriter, r *http.Request) bool {
+		cookie, err := r.Cookie("dashboard_session")
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return false
+		}
+
+		adminPubkey := resolveDashboardAdminPubkey(config)
+		if strings.ToLower(strings.TrimSpace(cookie.Value)) != strings.ToLower(strings.TrimSpace(adminPubkey)) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return false
+		}
+
+		return true
+	}
+
 	// API: Login endpoint
-	relay.Router().HandleFunc("/api/dashboard/login", func(w http.ResponseWriter, r *http.Request) {
+	registerAdminAPI("/login", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -1486,7 +1507,7 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 	})
 
 	// API: Get dashboard UI
-	relay.Router().HandleFunc("/api/dashboard/ui", func(w http.ResponseWriter, r *http.Request) {
+	registerAdminAPI("/ui", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -1511,7 +1532,7 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 	})
 
 	// API: Logout endpoint
-	relay.Router().HandleFunc("/api/dashboard/logout", func(w http.ResponseWriter, r *http.Request) {
+	registerAdminAPI("/logout", func(w http.ResponseWriter, r *http.Request) {
 		// Clear session cookie
 		http.SetCookie(w, &http.Cookie{
 			Name:     "dashboard_session",
@@ -1525,7 +1546,7 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 	})
 
 	// API: Users endpoint (GET for list, POST for add)
-	relay.Router().HandleFunc("/api/dashboard/users", func(w http.ResponseWriter, r *http.Request) {
+	registerAdminAPI("/users", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
 			response := map[string]interface{}{
@@ -1537,6 +1558,10 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 			json.NewEncoder(w).Encode(response)
 
 		case "POST":
+			if !requireAdminSession(w, r) {
+				return
+			}
+
 			// Only allow if using local nostr.json
 			if config.NPUBDomain != "" {
 				http.Error(w, "Cannot modify users when using remote nostr.json", http.StatusForbidden)
@@ -1584,7 +1609,13 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 	})
 
 	// API: Individual user operations (PUT for update, DELETE for delete)
-	relay.Router().HandleFunc("/api/dashboard/user/", func(w http.ResponseWriter, r *http.Request) {
+	registerAdminAPI("/user/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "PUT" || r.Method == "DELETE" {
+			if !requireAdminSession(w, r) {
+				return
+			}
+		}
+
 		// Only allow if using local nostr.json
 		if config.NPUBDomain != "" {
 			http.Error(w, "Cannot modify users when using remote nostr.json", http.StatusForbidden)
@@ -1593,6 +1624,9 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 
 		// Extract pubkey from URL
 		pubkey := strings.TrimPrefix(r.URL.Path, "/api/dashboard/user/")
+		if pubkey == r.URL.Path {
+			pubkey = strings.TrimPrefix(r.URL.Path, "/api/admin/user/")
+		}
 		if pubkey == "" {
 			http.Error(w, "Missing pubkey", http.StatusBadRequest)
 			return
@@ -1622,7 +1656,7 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 
 		case "DELETE":
 			// Don't allow deleting the root entry
-			if pubkey == config.RelayPubkey {
+			if strings.EqualFold(strings.TrimSpace(pubkey), strings.TrimSpace(resolveDashboardAdminPubkey(config))) {
 				http.Error(w, "Cannot delete root entry", http.StatusForbidden)
 				return
 			}
@@ -1646,7 +1680,7 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 	})
 
 	// API: Get environment variables
-	relay.Router().HandleFunc("/api/dashboard/environment", func(w http.ResponseWriter, r *http.Request) {
+	registerAdminAPI("/environment", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -1661,7 +1695,7 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 	})
 
 	// API: Convert pubkey
-	relay.Router().HandleFunc("/api/dashboard/convert", func(w http.ResponseWriter, r *http.Request) {
+	registerAdminAPI("/convert", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
