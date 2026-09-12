@@ -1,25 +1,12 @@
 /**
  * NostrLogin.js - Lightweight Nostr login replacement
  * Replaces nostr-login CDN module with an instant, local-first login dialog.
- * Supports NIP-07 extension login and nsec (secret key) login.
+ * Supports NIP-07 extension login only — no secret key handling in the browser.
  * Maintains full compatibility with existing nlAuth/nlLaunch/nlLogout event API
  * and __nostrlogin_accounts localStorage format.
  */
 (function () {
     'use strict';
-
-    // ─── Utility: SHA-256 hash ───────────────────────────────────────
-    async function sha256Hex(message) {
-        const msgBuffer = new TextEncoder().encode(message);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-
-    // ─── Utility: bytes to hex ───────────────────────────────────────
-    function bytesToHex(bytes) {
-        return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
-    }
 
     // ─── Utility: sanitize avatar URL ────────────────────────────────
     function sanitizeAvatarUrl(rawUrl) {
@@ -57,81 +44,13 @@
         }
         return '';
     }
-    // ─── Utility: hex to bytes ───────────────────────────────────────
-    function hexToBytes(hex) {
-        const bytes = new Uint8Array(hex.length / 2);
-        for (let i = 0; i < hex.length; i += 2) {
-            bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
-        }
-        return bytes;
-    }
-
     // ─── State ───────────────────────────────────────────────────────
-    let _privkeyHex = null; // only set for nsec login
     let _pubkeyHex = null;
-    let _loginMethod = null; // 'extension' | 'nsec'
     let _dialogEl = null;
-    const _nativeWindowNostr = window.nostr || null;
 
     // ─── nostr-tools availability check ──────────────────────────────
     function nt() {
         return window.NostrTools;
-    }
-
-    // ─── Core: set window.nostr for nsec-based login ─────────────────
-    function setWindowNostrFromNsec(privkeyHex, pubkeyHex) {
-        window.nostr = {
-            __nostrloginLocalNsecShim: true,
-            async getPublicKey() {
-                return pubkeyHex;
-            },
-            async signEvent(event) {
-                const tools = nt();
-                if (!tools) throw new Error('nostr-tools not loaded');
-                // Build unsigned event
-                const unsigned = {
-                    kind: event.kind,
-                    created_at: event.created_at || Math.floor(Date.now() / 1000),
-                    tags: event.tags || [],
-                    content: event.content || '',
-                    pubkey: pubkeyHex,
-                };
-                // Use nostr-tools finalizeEvent if available (v2), else fall back
-                if (tools.finalizeEvent) {
-                    const privBytes = hexToBytes(privkeyHex);
-                    const signed = tools.finalizeEvent(unsigned, privBytes);
-                    return signed;
-                }
-                // Fallback: compute id + sign manually with schnorr
-                const serialized = JSON.stringify([
-                    0,
-                    unsigned.pubkey,
-                    unsigned.created_at,
-                    unsigned.kind,
-                    unsigned.tags,
-                    unsigned.content,
-                ]);
-                const id = await sha256Hex(serialized);
-                unsigned.id = id;
-                // Use noble-secp256k1 if available through nostr-tools
-                if (tools.getSignature) {
-                    unsigned.sig = tools.getSignature(id, privkeyHex);
-                } else if (tools.schnorr && tools.schnorr.sign) {
-                    const sigBytes = await tools.schnorr.sign(id, privkeyHex);
-                    unsigned.sig = bytesToHex(sigBytes);
-                } else {
-                    throw new Error('Cannot sign event: no signing function available in nostr-tools');
-                }
-                return unsigned;
-            },
-            // NIP-04 stubs (not commonly needed for HiveTalk flow)
-            async nip04_encrypt(pubkey, plaintext) {
-                throw new Error('NIP-04 encrypt not supported with nsec login');
-            },
-            async nip04_decrypt(pubkey, ciphertext) {
-                throw new Error('NIP-04 decrypt not supported with nsec login');
-            },
-        };
     }
 
     // ─── Core: store account in __nostrlogin_accounts ────────────────
@@ -151,23 +70,12 @@
 
     // ─── Core: clear account ─────────────────────────────────────
     function clearAccount() {
-        const wasNsecLogin = _loginMethod === 'nsec';
-        _privkeyHex = null;
         _pubkeyHex = null;
-        _loginMethod = null;
         window.localStorage.removeItem('__nostrlogin_accounts');
         // Clear peer_* keys so Room.js doesn't restore stale session
         ['peer_name', 'peer_pubkey', 'peer_npub', 'peer_url', 'peer_lnaddress', 'peer_uuid'].forEach(k => {
             window.localStorage.removeItem(k);
         });
-        // Remove nsec signer shim from window.nostr on logout.
-        if (wasNsecLogin && window.nostr && window.nostr.__nostrloginLocalNsecShim) {
-            if (_nativeWindowNostr) {
-                window.nostr = _nativeWindowNostr;
-            } else {
-                delete window.nostr;
-            }
-        }
     }
 
     // ─── Core: fire nlAuth event ─────────────────────────────────────
@@ -283,34 +191,11 @@
         const pubkey = await window.nostr.getPublicKey();
         if (!pubkey) throw new Error('Extension returned no public key.');
         _pubkeyHex = pubkey;
-        _loginMethod = 'extension';
         storeAccount(pubkey);
         fireNlAuth('login');
         // Fetch profile in background so name+picture are ready for Room.js
         fetchProfileFromRelays(pubkey);
         return pubkey;
-    }
-
-    // ─── Core: nsec login ────────────────────────────────────────────
-    function loginWithNsec(nsec) {
-        const tools = nt();
-        if (!tools) throw new Error('nostr-tools not loaded');
-        // Decode nsec
-        const decoded = tools.nip19.decode(nsec);
-        if (decoded.type !== 'nsec') throw new Error('Invalid nsec key');
-        const privkeyBytes = decoded.data;
-        const privkeyHex = bytesToHex(privkeyBytes);
-        const pubkeyHex = tools.getPublicKey(privkeyBytes);
-        _privkeyHex = privkeyHex;
-        _pubkeyHex = pubkeyHex;
-        _loginMethod = 'nsec';
-        // Set window.nostr so existing code works seamlessly
-        setWindowNostrFromNsec(privkeyHex, pubkeyHex);
-        storeAccount(pubkeyHex);
-        fireNlAuth('login');
-        // Fetch profile in background so name+picture are ready for Room.js
-        fetchProfileFromRelays(pubkeyHex);
-        return pubkeyHex;
     }
 
     // ─── UI: create the login dialog ─────────────────────────────
@@ -344,13 +229,6 @@
                     </button>
                     <div id="nl-ext-missing" style="display:none;" class="nl-hint">
                         No Nostr extension detected. Install <a href="https://github.com/niceforu/niceforu-extension" target="_blank" rel="noopener">nos2x</a> or <a href="https://getalby.com" target="_blank" rel="noopener">Alby</a>.
-                    </div>
-                    <div class="nl-divider"><span>or</span></div>
-                    <div id="nl-nsec-section">
-                        <label for="nl-nsec-input" class="nl-label">Secret key (nsec)</label>
-                        <input id="nl-nsec-input" type="password" placeholder="nsec1..." autocomplete="off" class="nl-input" />
-                        <div id="nl-nsec-error" class="nl-error" style="display:none;"></div>
-                        <button id="nl-nsec-btn" class="nl-btn nl-btn-secondary">Login with Key</button>
                     </div>
                     <div id="nl-status" class="nl-status" style="display:none;"></div>
                 </div>
@@ -593,39 +471,6 @@
             }
         });
 
-        overlay.querySelector('#nl-nsec-btn').addEventListener('click', () => {
-            const input = overlay.querySelector('#nl-nsec-input');
-            const errEl = overlay.querySelector('#nl-nsec-error');
-            const nsec = input.value.trim();
-            errEl.style.display = 'none';
-
-            if (!nsec) {
-                errEl.textContent = 'Please enter your secret key.';
-                errEl.style.display = 'block';
-                return;
-            }
-            if (!/^nsec1[a-zA-Z0-9]{58}$/.test(nsec)) {
-                errEl.textContent = 'Invalid nsec format. Must start with nsec1 and be 63 characters.';
-                errEl.style.display = 'block';
-                return;
-            }
-            try {
-                loginWithNsec(nsec);
-                input.value = '';
-                closeDialog();
-            } catch (err) {
-                errEl.textContent = err.message || 'Login failed. Check your key.';
-                errEl.style.display = 'block';
-            }
-        });
-
-        // Enter key on nsec input
-        overlay.querySelector('#nl-nsec-input').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                overlay.querySelector('#nl-nsec-btn').click();
-            }
-        });
-
         // Logout button
         overlay.querySelector('#nl-logout-btn').addEventListener('click', () => {
             clearAccount();
@@ -688,18 +533,14 @@
             loginView.style.display = 'block';
 
             // Reset state
-            const errEl = dialog.querySelector('#nl-nsec-error');
             const status = dialog.querySelector('#nl-status');
-            const input = dialog.querySelector('#nl-nsec-input');
             const missingHint = dialog.querySelector('#nl-ext-missing');
             const extBtn = dialog.querySelector('#nl-ext-btn');
 
-            if (errEl) errEl.style.display = 'none';
             if (status) status.style.display = 'none';
-            if (input) input.value = '';
 
-            // Check for native NIP-07 extension (not our nsec shim)
-            const hasNativeExtension = window.nostr && _loginMethod !== 'nsec';
+            // Show hint when no NIP-07 extension is present
+            const hasNativeExtension = !!window.nostr;
             extBtn.style.display = 'flex';
             missingHint.style.display = hasNativeExtension ? 'none' : 'block';
         }
@@ -742,10 +583,8 @@
         }
     }, 3000);
 
-    // ─── Auto-restore: if user was previously logged in via nsec, we
-    //     can't restore the signer (no privkey stored for security).
-    //     Extension logins auto-restore via the extension itself.
-    //     We just ensure __nostrlogin_accounts is consistent. ─────────
+    // ─── Auto-restore: extension logins auto-restore via the extension
+    //     itself; we just ensure __nostrlogin_accounts is consistent. ──
 
     // ─── Auto-fetch profile on page load if account is missing name/picture ─
     // This covers pages like /active that load NostrLogin.js but not Room.js.
