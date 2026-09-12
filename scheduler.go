@@ -98,7 +98,11 @@ func (s *SchedulerStore) load() error {
 func (s *SchedulerStore) save() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.saveLocked()
+}
 
+// saveLocked persists posts; caller must hold s.mu.
+func (s *SchedulerStore) saveLocked() error {
 	data, err := json.MarshalIndent(s.posts, "", "  ")
 	if err != nil {
 		return err
@@ -165,8 +169,10 @@ func (s *SchedulerStore) ListPending() []*ScheduledPost {
 		}
 	}
 
-	// Persist status changes atomically
-	go s.save()
+	// Persist status changes synchronously while holding the lock
+	if err := s.saveLocked(); err != nil {
+		log.Printf("scheduler: failed to persist status changes: %v", err)
+	}
 
 	return result
 }

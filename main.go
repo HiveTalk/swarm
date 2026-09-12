@@ -26,6 +26,7 @@ import (
 	"github.com/fiatjaf/khatru/blossom"
 	"github.com/joho/godotenv"
 	"github.com/nbd-wtf/go-nostr"
+	"github.com/nbd-wtf/go-nostr/nip19"
 	"github.com/spf13/afero"
 )
 
@@ -1713,15 +1714,19 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 		var result map[string]interface{}
 		if strings.HasPrefix(req.Input, "npub1") {
 			// Convert npub to hex
-			hex, err := npubToHex(req.Input)
+			prefix, value, err := nip19.Decode(req.Input)
 			if err != nil {
 				result = map[string]interface{}{"error": "Invalid npub format: " + err.Error()}
+			} else if prefix != "npub" {
+				result = map[string]interface{}{"error": "Invalid npub format: unexpected prefix " + prefix}
+			} else if hexStr, ok := value.(string); !ok {
+				result = map[string]interface{}{"error": "Invalid npub format"}
 			} else {
-				result = map[string]interface{}{"hex": hex}
+				result = map[string]interface{}{"hex": hexStr}
 			}
 		} else if len(req.Input) == 64 && isValidHex(req.Input) {
 			// Convert hex to npub
-			npub, err := hexToNpub(req.Input)
+			npub, err := nip19.EncodePublicKey(req.Input)
 			if err != nil {
 				result = map[string]interface{}{"error": "Invalid hex format: " + err.Error()}
 			} else {
@@ -1744,13 +1749,13 @@ func getEnvironmentVars() map[string]string {
 	showVars := []string{
 		"RELAY_NAME", "RELAY_PUBKEY", "RELAY_DESCRIPTION",
 		"TEAM_DOMAIN", "NPUB_DOMAIN", "DB_ENGINE", "DB_PATH",
-		"POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DB", "POSTGRES_PASSWORD",
-		"DATABASE_URL", "BLOSSOM_ENABLED", "BLOSSOM_PATH",
+		"POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DB",
+		"BLOSSOM_ENABLED", "BLOSSOM_PATH",
 		"BLOSSOM_URL", "WEBSOCKET_URL", "ALLOWED_KINDS",
 		"PUBLIC_ALLOWED_KINDS", "TRUSTED_CLIENT_NAME", "TRUSTED_CLIENT_KINDS",
 		"MAX_UPLOAD_SIZE_MB", "RELAY_PORT", "ALLOWED_MIRROR_HOSTS",
 		"STORAGE_BACKEND", "S3_ENDPOINT", "S3_BUCKET", "S3_REGION",
-		"S3_PUBLIC_URL", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "NIP05_PATH",
+		"S3_PUBLIC_URL", "NIP05_PATH",
 	}
 
 	for _, varName := range showVars {
@@ -1862,125 +1867,4 @@ func deleteUser(pubkey string) error {
 
 	log.Printf("Deleted user: %s", userToDelete)
 	return nil
-}
-
-// npubToHex converts npub format to hex using bech32 decoding
-func npubToHex(npub string) (string, error) {
-	if len(npub) < 5 || !strings.HasPrefix(npub, "npub1") {
-		return "", fmt.Errorf("invalid npub format: must start with npub1")
-	}
-
-	// Simple bech32 validation and decoding
-	// This is a simplified implementation - in production you'd use a proper bech32 library
-	const alphabet = "023456789acdefghjklmnpqrstuvwxyz"
-
-	// Remove prefix and convert to lowercase
-	encoded := strings.ToLower(npub[5:])
-
-	// Validate characters
-	for _, c := range encoded {
-		if !strings.ContainsRune(alphabet, c) {
-			return "", fmt.Errorf("invalid character in npub")
-		}
-	}
-
-	// Convert to 5-bit groups
-	var data []byte
-	for _, c := range encoded {
-		index := strings.IndexRune(alphabet, c)
-		if index == -1 {
-			return "", fmt.Errorf("invalid character in npub")
-		}
-
-		// Convert to 5 bits
-		for i := 4; i >= 0; i-- {
-			bit := byte((index >> uint(i)) & 1)
-			data = appendBits(data, bit)
-		}
-	}
-
-	// Remove checksum (last 6 bits = checksum)
-	if len(data) < 6 {
-		return "", fmt.Errorf("npub too short")
-	}
-	data = data[:len(data)-6]
-
-	// Convert bits to bytes
-	var bytes []byte
-	for i := 0; i < len(data); i += 8 {
-		if i+8 <= len(data) {
-			var b byte
-			for j := 0; j < 8; j++ {
-				if i+j < len(data) {
-					b |= data[i+j] << uint(7-j)
-				}
-			}
-			bytes = append(bytes, b)
-		}
-	}
-
-	if len(bytes) < 32 {
-		return "", fmt.Errorf("decoded data too short")
-	}
-
-	return hex.EncodeToString(bytes[:32]), nil
-}
-
-// appendBits appends a bit to a byte slice
-func appendBits(data []byte, bit byte) []byte {
-	byteIndex := len(data) / 8
-	bitIndex := len(data) % 8
-
-	if bitIndex == 0 {
-		data = append(data, 0)
-	}
-
-	data[byteIndex] |= bit << uint(7-bitIndex)
-	return data
-}
-
-// hexToNpub converts hex to npub format using bech32 encoding
-func hexToNpub(hexStr string) (string, error) {
-	if len(hexStr) != 64 || !isValidHex(hexStr) {
-		return "", fmt.Errorf("invalid hex format")
-	}
-
-	// Decode hex to bytes
-	decoded, err := hex.DecodeString(hexStr)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode hex: %s", err)
-	}
-
-	// Take first 32 bytes
-	if len(decoded) > 32 {
-		decoded = decoded[:32]
-	}
-
-	// Convert bytes to 5-bit groups
-	var bits []byte
-	for _, b := range decoded {
-		for i := 7; i >= 0; i-- {
-			bit := (b >> uint(i)) & 1
-			bits = append(bits, bit)
-		}
-	}
-
-	// Convert to base32
-	const alphabet = "023456789acdefghjklmnpqrstuvwxyz"
-	var encoded string
-	for i := 0; i < len(bits); i += 5 {
-		if i+5 <= len(bits) {
-			value := byte(0)
-			for j := 0; j < 5; j++ {
-				if i+j < len(bits) {
-					value |= bits[i+j] << uint(4-j)
-				}
-			}
-			if int(value) < len(alphabet) {
-				encoded += string(alphabet[value])
-			}
-		}
-	}
-
-	return "npub1" + encoded, nil
 }
