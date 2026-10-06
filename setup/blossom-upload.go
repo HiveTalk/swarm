@@ -31,7 +31,7 @@ type BlossomUploadResponse struct {
 
 func readPassword() string {
 	fmt.Print("type your secret key as ncryptsec, nsec or hex: ")
-	
+
 	// Read password without echoing to terminal
 	bytePassword, err := term.ReadPassword(int(syscall.Stdin))
 	if err != nil {
@@ -39,7 +39,7 @@ func readPassword() string {
 		os.Exit(1)
 	}
 	fmt.Println() // Print newline after password input
-	
+
 	return string(bytePassword)
 }
 
@@ -58,7 +58,7 @@ func main() {
 
 	serverURL := args[0]
 	filePath := args[1]
-	
+
 	var privateKey string
 	if *promptSec {
 		privateKey = readPassword()
@@ -146,7 +146,7 @@ func main() {
 	req.Header.Set("Content-Type", getMimeType(ext))
 	req.Header.Set("Content-Length", strconv.FormatInt(fileInfo.Size(), 10))
 	req.Header.Set("User-Agent", "blossom-upload-cli/1.0")
-	
+
 	// Add authorization as header (BUD-02 format)
 	authJSON, _ := json.Marshal(authEvent)
 	req.Header.Set("Authorization", "Nostr "+string(authJSON))
