@@ -13,7 +13,7 @@ require (
 	github.com/fiatjaf/khatru v0.15.2
 	github.com/joho/godotenv v1.5.1
 	github.com/nbd-wtf/go-nostr v0.49.5
-	github.com/spf13/afero v1.12.0
+	github.com/spf13/afero v1.15.0
 	golang.org/x/term v0.46.0
 )
 
