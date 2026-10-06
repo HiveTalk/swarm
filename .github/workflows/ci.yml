@@ -23,6 +23,13 @@ jobs:
         with:
           go-version-file: .go-version
           cache: true
+      - name: Verify Go toolchain consistency
+        run: |
+          expected=$(cat .go-version)
+          docker_version=$(sed -n 's/^FROM golang:\([0-9][0-9.]*\)-alpine.*/\1/p' Dockerfile | head -n 1)
+          module_toolchain=$(go mod edit -json | jq -r '.Toolchain')
+          test "$docker_version" = "$expected"
+          test "$module_toolchain" = "go$expected"
       - name: Verify formatting
         run: test -z "$(gofmt -l .)"
       - name: Vet

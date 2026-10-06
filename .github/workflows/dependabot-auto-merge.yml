@@ -5,13 +5,15 @@ on:
     types: [opened, reopened, synchronize, ready_for_review]
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
 jobs:
-  enable-auto-merge:
-    if: github.actor == 'dependabot[bot]'
+  merge-if-verified:
+    if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - id: metadata
         uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a
@@ -21,17 +23,70 @@ jobs:
         env:
           DEPENDENCIES: ${{ steps.metadata.outputs.dependency-names }}
           UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+          PACKAGE_ECOSYSTEM: ${{ steps.metadata.outputs.package-ecosystem }}
+          MAINTAINER_CHANGES: ${{ steps.metadata.outputs.maintainer-changes }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           eligible=false
           if [[ "$UPDATE_TYPE" == 'version-update:semver-patch' || "$UPDATE_TYPE" == 'version-update:semver-minor' ]]; then
             eligible=true
           fi
-          if [[ "$DEPENDENCIES" =~ github.com/fiatjaf/khatru|github.com/fiatjaf/eventstore|github.com/nbd-wtf/go-nostr ]]; then
+          if [[ "$PACKAGE_ECOSYSTEM" == 'docker' || "$PACKAGE_ECOSYSTEM" == 'github_actions' ]]; then
             eligible=false
           fi
+          if [[ "$DEPENDENCIES" =~ github.com/fiatjaf/khatru|github.com/fiatjaf/eventstore|github.com/nbd-wtf/go-nostr|github.com/PowerDNS/lmdb-go|github.com/dgraph-io/badger|github.com/lib/pq|github.com/decred/dcrd/dcrec/secp256k1|github.com/btcsuite/btcd/btcec ]]; then
+            eligible=false
+          fi
+          if [[ "$MAINTAINER_CHANGES" == 'true' ]]; then
+            eligible=false
+          fi
+          allowed_pattern='^(go\.mod|go\.sum|package\.json|package-lock\.json|Dockerfile|\.github/workflows/[^/]+\.(yml|yaml))$'
+          while IFS= read -r path; do
+            if [[ ! "$path" =~ $allowed_pattern ]]; then
+              printf 'Dependency PR changes unexpected file: %s\n' "$path"
+              eligible=false
+            fi
+          done < <(gh pr view "$PR_URL" --json files --jq '.files[].path')
           printf 'eligible=%s\n' "$eligible" >> "$GITHUB_OUTPUT"
-      - if: steps.policy.outputs.eligible == 'true'
+      - name: Wait for required checks
+        if: steps.policy.outputs.eligible == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr merge --auto --squash "$PR_URL"
+        run: gh pr checks "$PR_URL" --required --watch --interval 15 --fail-fast
+      - name: Wait for security checks
+        if: steps.policy.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          deadline=$((SECONDS + 900))
+          while :; do
+            checks=$(gh pr view "$PR_URL" --json statusCheckRollup)
+            failed=$(jq '[.statusCheckRollup[] | select(.name != "merge-if-verified" and .status == "COMPLETED" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED"))] | length' <<< "$checks")
+            pending=$(jq '[.statusCheckRollup[] | select(.name != "merge-if-verified" and .status != "COMPLETED")] | length' <<< "$checks")
+            if [[ "$failed" -gt 0 ]]; then
+              jq -r '.statusCheckRollup[] | select(.name != "merge-if-verified" and .status == "COMPLETED" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED")) | "Failing check: \(.name) (\(.conclusion))"' <<< "$checks"
+              exit 1
+            fi
+            if [[ "$pending" -eq 0 ]]; then
+              exit 0
+            fi
+            if [[ "$SECONDS" -gt "$deadline" ]]; then
+              echo 'Timed out waiting for non-required checks'
+              exit 1
+            fi
+            sleep 15
+          done
+      - name: Merge dependency update
+        if: steps.policy.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge "$PR_URL" --squash --delete-branch
+      - name: Dispatch staged release
+        if: steps.policy.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run release.yml --ref main
