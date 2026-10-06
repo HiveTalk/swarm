@@ -6,6 +6,6 @@
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
-    "nostr-tools": "2.10.4"
+    "nostr-tools": "2.25.2"
   }
 }
