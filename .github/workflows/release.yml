@@ -57,6 +57,7 @@ jobs:
     env:
       IMAGE: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
       STAGING_URL: http://127.0.0.1:4334
+      DOCKER_CONFIG: /tmp/swarm-docker-config-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
@@ -137,4 +138,4 @@ jobs:
         run: |
           docker logs swarm-staging > staging-relay.log 2>&1 || true
           docker rm -f swarm-staging || true
-          rm -rf "$RUNNER_TEMP/swarm-staging"
+          rm -rf "$RUNNER_TEMP/swarm-staging" "$DOCKER_CONFIG"
