@@ -89,4 +89,4 @@ jobs:
         if: steps.policy.outputs.eligible == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run release.yml --ref main
+        run: gh workflow run release.yml --ref main -R "$GITHUB_REPOSITORY"
