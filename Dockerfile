@@ -1,5 +1,5 @@
 # Build Go binary
-FROM golang:1.26.6-alpine AS go-builder
+FROM golang:1.27.1-alpine AS go-builder
 
 WORKDIR /app
 
