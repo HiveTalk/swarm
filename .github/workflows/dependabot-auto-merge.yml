@@ -4,6 +4,10 @@ on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
 
+concurrency:
+  group: dependabot-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 permissions:
   actions: write
   contents: write
@@ -84,9 +88,37 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr merge "$PR_URL" --squash --delete-branch
+        run: |
+          for attempt in 1 2 3; do
+            if gh pr merge "$PR_URL" --squash --delete-branch; then
+              exit 0
+            fi
+            if [[ "$attempt" -eq 3 ]]; then
+              echo 'Unable to merge after updating the branch'
+              exit 1
+            fi
+            gh pr update-branch "$PR_URL"
+            deadline=$((SECONDS + 900))
+            while :; do
+              checks=$(gh pr view "$PR_URL" --json statusCheckRollup)
+              failed=$(jq '[.statusCheckRollup[] | select(.name != "merge-if-verified" and .status == "COMPLETED" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED"))] | length' <<< "$checks")
+              pending=$(jq '[.statusCheckRollup[] | select(.name != "merge-if-verified" and .status != "COMPLETED")] | length' <<< "$checks")
+              if [[ "$failed" -gt 0 ]]; then
+                jq -r '.statusCheckRollup[] | select(.name != "merge-if-verified" and .status == "COMPLETED" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED")) | "Failing check: \(.name) (\(.conclusion))"' <<< "$checks"
+                exit 1
+              fi
+              if [[ "$pending" -eq 0 ]]; then
+                break
+              fi
+              if [[ "$SECONDS" -gt "$deadline" ]]; then
+                echo 'Timed out waiting for checks after branch update'
+                exit 1
+              fi
+              sleep 15
+            done
+          done
       - name: Dispatch staged release
         if: steps.policy.outputs.eligible == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run release.yml --ref main
+        run: gh workflow run release.yml --ref main -R "$GITHUB_REPOSITORY"
