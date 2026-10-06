@@ -1,0 +1,24 @@
+name: Production smoke test
+
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: .go-version
+          cache: true
+      - name: Verify production relay
+        env:
+          E2E_RELAY_URL: https://swarm.hivetalk.org
+          E2E_READ_ONLY: 'true'
+        run: go test -v ./test/e2e

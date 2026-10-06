@@ -1,5 +1,5 @@
 # Build Go binary
-FROM golang:1.24-alpine AS go-builder
+FROM golang:1.26.6-alpine AS go-builder
 
 WORKDIR /app
 
@@ -16,10 +16,13 @@ COPY . .
 # Copy public files (including nostr.json backup)
 
 # Build static binary
-RUN CGO_ENABLED=1 go build -ldflags="-s -w" -o /app/swarm
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILT_AT=unknown
+RUN CGO_ENABLED=1 go build -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.builtAt=${BUILT_AT}" -o /app/swarm
 
 # Runtime - minimal Alpine image
-FROM alpine:latest
+FROM alpine:3.22
 
 LABEL "language"="go"
 
@@ -140,6 +143,8 @@ RUN chmod +x /app/backup.sh /app/restore.sh /app/start.sh
 RUN mkdir -p /app/db /app/blossom /app/backups
 
 EXPOSE 3334
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 CMD curl -fsS http://127.0.0.1:${RELAY_PORT:-3334}/health/ready || exit 1
 
 # Set default environment variables (can be overridden by Zeabur env vars)
 ENV CGO_ENABLED=1

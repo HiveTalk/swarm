@@ -1,0 +1,150 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: .go-version
+          cache: true
+      - name: Verify formatting
+        run: test -z "$(gofmt -l .)"
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test -race ./...
+      - name: Build
+        run: go build ./...
+
+  vulnerability-scan:
+    name: Go vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: .go-version
+          cache: true
+      - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f
+        with:
+          go-package: ./...
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48
+        with:
+          fail-on-severity: high
+
+  relay-e2e:
+    name: Relay E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: .go-version
+          cache: true
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install browser dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Build image
+        run: |
+          docker build \
+            --build-arg VERSION=ci \
+            --build-arg COMMIT=${{ github.sha }} \
+            --build-arg BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+            -t swarm:e2e .
+      - name: Start relay
+        run: |
+          mkdir -p .e2e
+          admin_secret=$(openssl rand -hex 32)
+          team_secret=$(openssl rand -hex 32)
+          admin_pubkey=$(printf '%s\n' "$admin_secret" | go run ./test/keygen)
+          team_pubkey=$(printf '%s\n' "$team_secret" | go run ./test/keygen)
+          printf '{"names":{"_":"%s","team":"%s"},"relays":{}}\n' "$admin_pubkey" "$team_pubkey" > .e2e/nostr.json
+          printf 'E2E_ADMIN_SECRET_KEY=%s\nE2E_TEAM_SECRET_KEY=%s\nE2E_PUBLIC_KINDS=1,6,7\nE2E_TEAM_KINDS=0,1,6,7,10002,30311\n' "$admin_secret" "$team_secret" > .e2e/test-env
+          chmod 600 .e2e/test-env .e2e/nostr.json
+          docker run -d --name swarm-e2e \
+            -p 127.0.0.1:3334:3334 \
+            -v "$PWD/.e2e/nostr.json:/app/public/.well-known/nostr.json" \
+            -e RELAY_NAME='Swarm E2E' \
+            -e RELAY_PUBKEY="$admin_pubkey" \
+            -e RELAY_DESCRIPTION='Swarm E2E Relay' \
+            -e DB_ENGINE=badger \
+            -e DB_PATH=/tmp/swarm-e2e-db \
+            -e NPUB_DOMAIN= \
+            -e BLOSSOM_ENABLED=false \
+            -e PUBLIC_ALLOWED_KINDS=1,6,7 \
+            -e ALLOWED_KINDS=0,1,6,7,10002,30311 \
+            -e COOKIE_SECURE=false \
+            -e PUBKEY_RATE_LIMIT= \
+            -e IP_RATE_LIMIT= \
+            -e CONN_RATE_LIMIT= \
+            -e QUERY_RATE_LIMIT= \
+            swarm:e2e
+          for attempt in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:3334/health/ready && exit 0
+            sleep 1
+          done
+          docker logs swarm-e2e
+          exit 1
+      - name: Test relay protocol
+        env:
+          E2E_RELAY_URL: http://127.0.0.1:3334
+        run: |
+          set -a
+          . .e2e/test-env
+          set +a
+          go test -v ./test/e2e
+      - name: Test browser surfaces
+        env:
+          E2E_RELAY_URL: http://127.0.0.1:3334
+        run: |
+          set -a
+          . .e2e/test-env
+          set +a
+          npm run test:e2e
+      - name: Capture relay logs
+        if: always()
+        run: docker logs swarm-e2e > relay-e2e.log 2>&1 || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: failure()
+        with:
+          name: relay-e2e-debug
+          path: |
+            relay-e2e.log
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+      - name: Stop relay
+        if: always()
+        run: |
+          docker rm -f swarm-e2e || true
+          rm -rf .e2e

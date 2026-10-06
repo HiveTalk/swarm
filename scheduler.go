@@ -390,8 +390,8 @@ func (s *Scheduler) HandleSchedule(w http.ResponseWriter, r *http.Request) {
 	// Validate User (must match signed event pubkey)
 	if req.SignedEvent.PubKey != userPubkey {
 		logWithFields("warn", "Event pubkey mismatch", map[string]interface{}{
-			"user_pubkey":     userPubkey,
-			"event_pubkey":    req.SignedEvent.PubKey,
+			"user_pubkey":  userPubkey,
+			"event_pubkey": req.SignedEvent.PubKey,
 		})
 		http.Error(w, "Event pubkey mismatch", http.StatusBadRequest)
 		return
@@ -443,10 +443,10 @@ func (s *Scheduler) HandleSchedule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logWithFields("info", "Scheduled post created", map[string]interface{}{
-		"user_pubkey":    userPubkey,
-		"post_id":        post.ID,
-		"scheduled_for":  req.ScheduledFor,
-		"relay_count":    len(req.Relays),
+		"user_pubkey":   userPubkey,
+		"post_id":       post.ID,
+		"scheduled_for": req.ScheduledFor,
+		"relay_count":   len(req.Relays),
 	})
 
 	w.Header().Set("Content-Type", "application/json")
@@ -477,8 +477,8 @@ func (s *Scheduler) HandleList(w http.ResponseWriter, r *http.Request) {
 	posts := s.store.ListByUser(userPubkey)
 
 	logWithFields("info", "Listed scheduled posts", map[string]interface{}{
-		"user_pubkey":  userPubkey,
-		"post_count":   len(posts),
+		"user_pubkey": userPubkey,
+		"post_count":  len(posts),
 	})
 
 	w.Header().Set("Content-Type", "application/json")
@@ -524,9 +524,9 @@ func (s *Scheduler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 
 	if post.UserPubkey != userPubkey {
 		logWithFields("warn", "Forbidden deletion attempt", map[string]interface{}{
-			"user_pubkey":  userPubkey,
-			"post_owner":   post.UserPubkey,
-			"post_id":      id,
+			"user_pubkey": userPubkey,
+			"post_owner":  post.UserPubkey,
+			"post_id":     id,
 		})
 		http.Error(w, "Not allowed", http.StatusForbidden)
 		return

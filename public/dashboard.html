@@ -216,12 +216,26 @@
             loginError.textContent = '';
             
             try {
+                const challengeResponse = await fetch('/api/dashboard/challenge');
+                if (!challengeResponse.ok) {
+                    throw new Error('Failed to create login challenge');
+                }
+                const challengeData = await challengeResponse.json();
+                const signedEvent = await window.nostr.signEvent({
+                    kind: challengeData.kind,
+                    created_at: Math.floor(Date.now() / 1000),
+                    tags: [['action', 'dashboard-login']],
+                    content: challengeData.challenge
+                });
+                if (signedEvent.pubkey.toLowerCase() !== pubkey.toLowerCase()) {
+                    throw new Error('Signer pubkey does not match the selected account');
+                }
                 const response = await fetch('/api/dashboard/login', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ pubkey })
+                    body: JSON.stringify({ event: signedEvent })
                 });
 
                 if (response.ok) {

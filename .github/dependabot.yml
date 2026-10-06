@@ -1,13 +1,95 @@
 version: 2
 updates:
-  # Go modules
-  - package-ecosystem: "gomod"
-    directory: "/"
+  - package-ecosystem: gomod
+    directory: /
     schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 10
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    groups:
+      aws-sdk:
+        patterns:
+          - github.com/aws/aws-sdk-go-v2*
+          - github.com/aws/smithy-go
+        update-types:
+          - minor
+          - patch
+      nostr-stack:
+        patterns:
+          - github.com/fiatjaf/*
+          - github.com/nbd-wtf/*
+        update-types:
+          - minor
+          - patch
+      golang-x:
+        patterns:
+          - golang.org/x/*
+        update-types:
+          - minor
+          - patch
+      remaining:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
     commit-message:
-      prefix: "chore(deps)"
+      prefix: chore(deps)
     labels:
-      - "dependencies"
+      - dependencies
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:15"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    groups:
+      playwright:
+        patterns:
+          - "@playwright/*"
+          - playwright*
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: chore(deps)
+    labels:
+      - dependencies
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:30"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: chore(deps)
+    labels:
+      - dependencies
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:45"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: chore(deps)
+    labels:
+      - dependencies

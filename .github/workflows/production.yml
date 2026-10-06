@@ -1,0 +1,100 @@
+name: Promote production
+
+on:
+  workflow_dispatch:
+    inputs:
+      staging_run_id:
+        description: Successful Build and stage workflow run ID
+        required: true
+        type: string
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  promote:
+    name: Promote verified image
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      PRODUCTION_URL: ${{ vars.RELAY_URL }}
+    steps:
+      - name: Resolve staging-verified image
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ inputs.staging_run_id }}
+        run: |
+          run_metadata=$(gh api "repos/${{ github.repository }}/actions/runs/$RUN_ID" --jq '.conclusion + " " + .head_branch + " " + .path')
+          test "$run_metadata" = 'success main .github/workflows/release.yml'
+          gh run download "$RUN_ID" --repo "${{ github.repository }}" --name staging-release --dir /tmp/staging-release
+          image=$(jq -r '.image + "@" + .digest' /tmp/staging-release/staging-release.json)
+          commit=$(jq -r '.commit' /tmp/staging-release/staging-release.json)
+          [[ "$image" =~ ^ghcr.io/hivetalk/swarm@sha256:[0-9a-f]{64}$ ]]
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          printf 'IMAGE=%s\n' "$image" >> "$GITHUB_ENV"
+          printf 'commit=%s\n' "$commit" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ steps.release.outputs.commit }}
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: .go-version
+          cache: true
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST_KEY: ${{ secrets.SSH_HOST_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_HOST_KEY" > ~/.ssh/known_hosts
+      - name: Deploy image
+        id: deploy
+        env:
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
+          scp deploy/compose.yml deploy/predeploy-backup.sh "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+          printf '%s' "$GHCR_TOKEN" | ssh "$DEPLOY_USER@$DEPLOY_HOST" "docker login ghcr.io --username '$GHCR_USERNAME' --password-stdin"
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "IMAGE='$IMAGE' DEPLOY_PATH='$DEPLOY_PATH' RUN_ID='${{ github.run_id }}' sh -s" <<'REMOTE'
+          set -eu
+          cd "$DEPLOY_PATH"
+          test -f .env
+          chmod 700 predeploy-backup.sh
+          ./predeploy-backup.sh
+          previous=$(docker inspect swarm_relay --format '{{.Image}}')
+          printf '%s\n' "$previous" > previous-image
+          printf '%s\n' "$RUN_ID" > deployment-run
+          SWARM_IMAGE="$IMAGE" docker compose -f compose.yml pull
+          if ! SWARM_IMAGE="$IMAGE" docker compose -f compose.yml up -d --wait; then
+            SWARM_IMAGE="$previous" docker compose -f compose.yml up -d --wait
+            exit 1
+          fi
+          REMOTE
+      - name: Verify production relay
+        env:
+          E2E_RELAY_URL: ${{ env.PRODUCTION_URL }}
+          E2E_READ_ONLY: 'true'
+          E2E_SECRET_KEY: ${{ secrets.E2E_SECRET_KEY }}
+        run: go test -v ./test/e2e
+      - name: Roll back failed deployment
+        if: failure() && steps.deploy.outcome == 'success'
+        run: |
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "DEPLOY_PATH='$DEPLOY_PATH' RUN_ID='${{ github.run_id }}' sh -s" <<'REMOTE'
+          set -eu
+          cd "$DEPLOY_PATH"
+          test "$(cat deployment-run)" = "$RUN_ID"
+          previous=$(cat previous-image)
+          SWARM_IMAGE="$previous" docker compose -f compose.yml up -d --wait
+          REMOTE

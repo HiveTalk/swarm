@@ -1,0 +1,27 @@
+services:
+  relay:
+    image: ${SWARM_IMAGE:?SWARM_IMAGE must be set}
+    container_name: swarm_relay
+    restart: unless-stopped
+    env_file:
+      - ${SWARM_ENV_FILE:-.env}
+    environment:
+      RELAY_PORT: "3334"
+      DOCKER_ENV: "true"
+    ports:
+      - "127.0.0.1:${HOST_PORT:-3334}:3334"
+    volumes:
+      - public_data:/app/public
+      - db_data:/app/db
+      - blossom_data:/app/blossom
+      - backup_data:/app/backups
+
+volumes:
+  public_data:
+    name: ${DEPLOYMENT_NAME:-swarm}_public
+  db_data:
+    name: ${DEPLOYMENT_NAME:-swarm}_db
+  blossom_data:
+    name: ${DEPLOYMENT_NAME:-swarm}_blossom
+  backup_data:
+    name: ${DEPLOYMENT_NAME:-swarm}_backups

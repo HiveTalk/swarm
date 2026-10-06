@@ -1,6 +1,8 @@
 module github.com/hivetalk/swarm
 
-go 1.25.0
+go 1.26.0
+
+toolchain go1.26.6
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.5

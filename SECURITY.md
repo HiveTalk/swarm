@@ -2,20 +2,18 @@
 
 ## Supported Versions
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+Swarm is currently in the `0.x` release series. Security fixes are applied to the latest release and the `main` branch. Older releases are not maintained.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+| Version | Supported |
+| ------- | --------- |
+| Latest release | Yes |
+| `main` | Yes |
+| Older releases | No |
 
 ## Reporting a Vulnerability
 
-Use this section to tell people how to report a vulnerability.
+Use GitHub's private vulnerability reporting feature in the repository Security tab. Do not open a public issue for an undisclosed vulnerability.
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+Include the affected component and version, reproduction steps or a proof of concept, the expected impact, and any suggested remediation. Remove credentials, private keys, production data, and other secrets from the report.
+
+A maintainer will acknowledge the report, assess its severity, and coordinate remediation and disclosure through the private advisory. If the report is not accepted, the maintainer will explain why in the advisory.
