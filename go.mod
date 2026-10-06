@@ -14,7 +14,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/nbd-wtf/go-nostr v0.49.5
 	github.com/spf13/afero v1.12.0
-	golang.org/x/term v0.43.0
+	golang.org/x/term v0.46.0
 )
 
 require (
@@ -71,7 +71,7 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac // indirect
 	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	google.golang.org/protobuf v1.36.2 // indirect
 )
