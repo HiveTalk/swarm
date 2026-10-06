@@ -50,51 +50,76 @@ jobs:
 
   staging:
     name: Deploy and verify staging
-    if: vars.STAGING_ENABLED == 'true'
+    if: vars.STAGING_ENABLED == 'true' && github.ref == 'refs/heads/main'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, swarm-staging]
     environment: staging
     env:
       IMAGE: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-      STAGING_URL: ${{ vars.RELAY_URL }}
+      STAGING_URL: http://127.0.0.1:4334
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
           go-version-file: .go-version
           cache: true
-      - name: Configure SSH
-        env:
-          SSH_KEY: ${{ secrets.SSH_KEY }}
-          SSH_HOST_KEY: ${{ secrets.SSH_HOST_KEY }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install browser dependencies
         run: |
-          install -m 700 -d ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          printf '%s\n' "$SSH_HOST_KEY" > ~/.ssh/known_hosts
-      - name: Deploy image
-        env:
-          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          npm ci
+          npx playwright install chromium
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Start isolated staging relay
         run: |
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
-          scp deploy/compose.yml "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/compose.yml"
-          printf '%s' "$GHCR_TOKEN" | ssh "$DEPLOY_USER@$DEPLOY_HOST" "docker login ghcr.io --username '$GHCR_USERNAME' --password-stdin"
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && test -f .env && SWARM_IMAGE='$IMAGE' docker compose -f compose.yml pull && SWARM_IMAGE='$IMAGE' docker compose -f compose.yml up -d --wait"
-      - name: Wait for external readiness
-        run: |
+          docker rm -f swarm-staging || true
+          rm -rf "$RUNNER_TEMP/swarm-staging"
+          mkdir -p "$RUNNER_TEMP/swarm-staging"
+          admin_secret=$(openssl rand -hex 32)
+          team_secret=$(openssl rand -hex 32)
+          admin_pubkey=$(printf '%s\n' "$admin_secret" | go run ./test/keygen)
+          team_pubkey=$(printf '%s\n' "$team_secret" | go run ./test/keygen)
+          printf '{"names":{"_":"%s","team":"%s"},"relays":{}}\n' "$admin_pubkey" "$team_pubkey" > "$RUNNER_TEMP/swarm-staging/nostr.json"
+          printf 'E2E_ADMIN_SECRET_KEY=%s\nE2E_TEAM_SECRET_KEY=%s\nE2E_PUBLIC_KINDS=1,6,7\nE2E_TEAM_KINDS=0,1,6,7,10002,30311\n' "$admin_secret" "$team_secret" > "$RUNNER_TEMP/swarm-staging/test-env"
+          chmod 600 "$RUNNER_TEMP/swarm-staging/nostr.json" "$RUNNER_TEMP/swarm-staging/test-env"
+          docker pull "$IMAGE"
+          docker run -d --name swarm-staging \
+            -p 127.0.0.1:4334:3334 \
+            -v "$RUNNER_TEMP/swarm-staging/nostr.json:/app/public/.well-known/nostr.json" \
+            -e RELAY_NAME='Swarm Staging' \
+            -e RELAY_PUBKEY="$admin_pubkey" \
+            -e RELAY_DESCRIPTION='Swarm staging verification relay' \
+            -e DB_ENGINE=badger \
+            -e DB_PATH=/tmp/swarm-staging-db \
+            -e NPUB_DOMAIN= \
+            -e BLOSSOM_ENABLED=false \
+            -e PUBLIC_ALLOWED_KINDS=1,6,7 \
+            -e ALLOWED_KINDS=0,1,6,7,10002,30311 \
+            -e COOKIE_SECURE=false \
+            -e PUBKEY_RATE_LIMIT= \
+            -e IP_RATE_LIMIT= \
+            -e CONN_RATE_LIMIT= \
+            -e QUERY_RATE_LIMIT= \
+            "$IMAGE"
           for attempt in $(seq 1 30); do
             curl -fsS "$STAGING_URL/health/ready" && exit 0
-            sleep 2
+            sleep 1
           done
+          docker logs swarm-staging
           exit 1
       - name: Verify staging relay
-        env:
-          E2E_RELAY_URL: ${{ env.STAGING_URL }}
-        run: go test -v ./test/e2e
+        run: |
+          set -a
+          . "$RUNNER_TEMP/swarm-staging/test-env"
+          set +a
+          E2E_RELAY_URL="$STAGING_URL" go test -v ./test/e2e
+          E2E_RELAY_URL="$STAGING_URL" npm run test:e2e
       - name: Record verified release
         run: |
           jq -n \
@@ -107,3 +132,9 @@ jobs:
           name: staging-release
           path: staging-release.json
           retention-days: 30
+      - name: Stop staging relay
+        if: always()
+        run: |
+          docker logs swarm-staging > staging-relay.log 2>&1 || true
+          docker rm -f swarm-staging || true
+          rm -rf "$RUNNER_TEMP/swarm-staging"

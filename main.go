@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -91,6 +92,13 @@ func truncatePubkey(pk string) string {
 	return pk[:8]
 }
 
+func dashboardCookieSecure() bool {
+	if value, exists := os.LookupEnv("COOKIE_SECURE"); exists {
+		return strings.EqualFold(strings.TrimSpace(value), "true")
+	}
+	return os.Getenv("DOCKER_ENV") == "true"
+}
+
 type NostrData struct {
 	Names  map[string]string   `json:"names"`
 	Relays map[string][]string `json:"relays"`
@@ -106,6 +114,32 @@ var nostrDataLoaded atomic.Bool
 var version = "dev"
 var commit = "unknown"
 var builtAt = "unknown"
+var dashboardChallenges sync.Map
+var dashboardSessions sync.Map
+var dashboardAuthCleanup sync.Once
+
+type dashboardSession struct {
+	Pubkey    string
+	ExpiresAt time.Time
+}
+
+func cleanupDashboardAuthState() {
+	for now := range time.Tick(time.Minute) {
+		dashboardChallenges.Range(func(key, value interface{}) bool {
+			if expiresAt, ok := value.(time.Time); !ok || now.After(expiresAt) {
+				dashboardChallenges.Delete(key)
+			}
+			return true
+		})
+		dashboardSessions.Range(func(key, value interface{}) bool {
+			session, ok := value.(dashboardSession)
+			if !ok || now.After(session.ExpiresAt) {
+				dashboardSessions.Delete(key)
+			}
+			return true
+		})
+	}
+}
 
 func main() {
 	relay = khatru.NewRelay()
@@ -1493,6 +1527,10 @@ func initializeNostrJson(config Config) error {
 
 // setupDashboardHandlers adds all the API endpoints for the dashboard
 func setupDashboardHandlers(relay *khatru.Relay, config Config) {
+	dashboardAuthCleanup.Do(func() {
+		go cleanupDashboardAuthState()
+	})
+
 	// Serve dashboard HTML
 	relay.Router().HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
@@ -1514,8 +1552,15 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 			return false
 		}
 
+		sessionValue, exists := dashboardSessions.Load(cookie.Value)
+		if !exists {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return false
+		}
+		session := sessionValue.(dashboardSession)
 		adminPubkey := resolveDashboardAdminPubkey(config)
-		if strings.ToLower(strings.TrimSpace(cookie.Value)) != strings.ToLower(strings.TrimSpace(adminPubkey)) {
+		if time.Now().After(session.ExpiresAt) || !strings.EqualFold(session.Pubkey, adminPubkey) {
+			dashboardSessions.Delete(cookie.Value)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return false
 		}
@@ -1523,7 +1568,32 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 		return true
 	}
 
-	// API: Login endpoint
+	registerAdminAPI("/challenge", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		challengeBytes := make([]byte, 32)
+		if _, err := rand.Read(challengeBytes); err != nil {
+			http.Error(w, "Could not create login challenge", http.StatusInternalServerError)
+			return
+		}
+		challenge := hex.EncodeToString(challengeBytes)
+		dashboardChallenges.Store(challenge, time.Now().Add(5*time.Minute))
+		http.SetCookie(w, &http.Cookie{
+			Name:     "dashboard_challenge",
+			Value:    challenge,
+			Path:     "/api/",
+			HttpOnly: true,
+			Secure:   dashboardCookieSecure(),
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   300,
+		})
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"challenge": challenge, "kind": 27235})
+	})
+
 	registerAdminAPI("/login", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -1531,37 +1601,57 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 		}
 
 		var req struct {
-			Pubkey string `json:"pubkey"`
+			Event nostr.Event `json:"event"`
 		}
-
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "Invalid JSON", http.StatusBadRequest)
 			return
 		}
 
-		adminPubkey := resolveDashboardAdminPubkey(config)
+		challengeCookie, err := r.Cookie("dashboard_challenge")
+		if err != nil {
+			http.Error(w, "Missing login challenge", http.StatusUnauthorized)
+			return
+		}
+		expiresValue, exists := dashboardChallenges.LoadAndDelete(challengeCookie.Value)
+		if !exists || time.Now().After(expiresValue.(time.Time)) {
+			http.Error(w, "Invalid or expired login challenge", http.StatusUnauthorized)
+			return
+		}
+		validSignature, err := req.Event.CheckSignature()
+		createdAt := time.Unix(int64(req.Event.CreatedAt), 0)
+		if err != nil || !validSignature || req.Event.Kind != 27235 || req.Event.Content != challengeCookie.Value || time.Since(createdAt) > 5*time.Minute || time.Until(createdAt) > time.Minute {
+			http.Error(w, "Invalid login signature", http.StatusUnauthorized)
+			return
+		}
 
-		// Validate pubkey against admin pubkey
-		if req.Pubkey != adminPubkey {
-			log.Printf("Dashboard login denied: req pubkey %s... does not match admin %s...", truncatePubkey(req.Pubkey), truncatePubkey(adminPubkey))
+		adminPubkey := resolveDashboardAdminPubkey(config)
+		if !strings.EqualFold(req.Event.PubKey, adminPubkey) {
+			log.Printf("Dashboard login denied: req pubkey %s... does not match admin %s...", truncatePubkey(req.Event.PubKey), truncatePubkey(adminPubkey))
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Access denied. Only the relay operator ('_' in nostr.json) can login."})
 			return
 		}
 
-		// Set a simple session cookie for the UI endpoint
+		sessionBytes := make([]byte, 32)
+		if _, err := rand.Read(sessionBytes); err != nil {
+			http.Error(w, "Could not create dashboard session", http.StatusInternalServerError)
+			return
+		}
+		sessionToken := hex.EncodeToString(sessionBytes)
+		dashboardSessions.Store(sessionToken, dashboardSession{Pubkey: req.Event.PubKey, ExpiresAt: time.Now().Add(time.Hour)})
 		http.SetCookie(w, &http.Cookie{
 			Name:     "dashboard_session",
-			Value:    req.Pubkey,
+			Value:    sessionToken,
 			Path:     "/",
 			HttpOnly: true,
-			Secure:   os.Getenv("DOCKER_ENV") == "true",
+			Secure:   dashboardCookieSecure(),
 			SameSite: http.SameSiteLaxMode,
-			MaxAge:   3600, // 1 hour
+			MaxAge:   3600,
 		})
+		http.SetCookie(w, &http.Cookie{Name: "dashboard_challenge", Value: "", Path: "/api/", HttpOnly: true, Secure: dashboardCookieSecure(), MaxAge: -1})
 
-		// Return dashboard data
 		response := map[string]interface{}{
 			"relayName":        config.RelayName,
 			"relayDescription": config.RelayDescription,
@@ -1582,18 +1672,7 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 			return
 		}
 
-		// Check session cookie
-		cookie, err := r.Cookie("dashboard_session")
-		if err != nil {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		// Verify cookie value matches admin pubkey
-		adminPubkey := resolveDashboardAdminPubkey(config)
-
-		if cookie.Value != adminPubkey {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		if !requireAdminSession(w, r) {
 			return
 		}
 
@@ -1602,6 +1681,9 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 
 	// API: Logout endpoint
 	registerAdminAPI("/logout", func(w http.ResponseWriter, r *http.Request) {
+		if cookie, err := r.Cookie("dashboard_session"); err == nil {
+			dashboardSessions.Delete(cookie.Value)
+		}
 		// Clear session cookie
 		http.SetCookie(w, &http.Cookie{
 			Name:     "dashboard_session",

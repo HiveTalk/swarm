@@ -83,17 +83,27 @@ jobs:
             -t swarm:e2e .
       - name: Start relay
         run: |
+          mkdir -p .e2e
+          admin_secret=$(openssl rand -hex 32)
+          team_secret=$(openssl rand -hex 32)
+          admin_pubkey=$(printf '%s\n' "$admin_secret" | go run ./test/keygen)
+          team_pubkey=$(printf '%s\n' "$team_secret" | go run ./test/keygen)
+          printf '{"names":{"_":"%s","team":"%s"},"relays":{}}\n' "$admin_pubkey" "$team_pubkey" > .e2e/nostr.json
+          printf 'E2E_ADMIN_SECRET_KEY=%s\nE2E_TEAM_SECRET_KEY=%s\nE2E_PUBLIC_KINDS=1,6,7\nE2E_TEAM_KINDS=0,1,6,7,10002,30311\n' "$admin_secret" "$team_secret" > .e2e/test-env
+          chmod 600 .e2e/test-env .e2e/nostr.json
           docker run -d --name swarm-e2e \
             -p 127.0.0.1:3334:3334 \
+            -v "$PWD/.e2e/nostr.json:/app/public/.well-known/nostr.json" \
             -e RELAY_NAME='Swarm E2E' \
-            -e RELAY_PUBKEY='8ad8f1f78c8e11966242e28a7ca15c936b23a999d5fb91bfe4e4472e2d6eaf55' \
+            -e RELAY_PUBKEY="$admin_pubkey" \
             -e RELAY_DESCRIPTION='Swarm E2E Relay' \
             -e DB_ENGINE=badger \
             -e DB_PATH=/tmp/swarm-e2e-db \
             -e NPUB_DOMAIN= \
             -e BLOSSOM_ENABLED=false \
-            -e PUBLIC_ALLOWED_KINDS=1 \
-            -e ALLOWED_KINDS= \
+            -e PUBLIC_ALLOWED_KINDS=1,6,7 \
+            -e ALLOWED_KINDS=0,1,6,7,10002,30311 \
+            -e COOKIE_SECURE=false \
             -e PUBKEY_RATE_LIMIT= \
             -e IP_RATE_LIMIT= \
             -e CONN_RATE_LIMIT= \
@@ -108,11 +118,19 @@ jobs:
       - name: Test relay protocol
         env:
           E2E_RELAY_URL: http://127.0.0.1:3334
-        run: go test -v ./test/e2e
+        run: |
+          set -a
+          . .e2e/test-env
+          set +a
+          go test -v ./test/e2e
       - name: Test browser surfaces
         env:
           E2E_RELAY_URL: http://127.0.0.1:3334
-        run: npm run test:e2e
+        run: |
+          set -a
+          . .e2e/test-env
+          set +a
+          npm run test:e2e
       - name: Capture relay logs
         if: always()
         run: docker logs swarm-e2e > relay-e2e.log 2>&1 || true
@@ -127,4 +145,6 @@ jobs:
           if-no-files-found: ignore
       - name: Stop relay
         if: always()
-        run: docker rm -f swarm-e2e || true
+        run: |
+          docker rm -f swarm-e2e || true
+          rm -rf .e2e

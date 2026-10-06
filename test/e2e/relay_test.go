@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +40,33 @@ func writeSecretKey(t *testing.T) string {
 		t.Skip("write checks are disabled")
 	}
 	return nostr.GeneratePrivateKey()
+}
+
+func requiredSecretKey(t *testing.T, name string) string {
+	t.Helper()
+	secretKey := os.Getenv(name)
+	if secretKey == "" {
+		t.Skip(name + " is not set")
+	}
+	return secretKey
+}
+
+func configuredKinds(t *testing.T, name string) []int {
+	t.Helper()
+	value := os.Getenv(name)
+	if value == "" {
+		t.Skip(name + " is not set")
+	}
+	parts := strings.Split(value, ",")
+	kinds := make([]int, 0, len(parts))
+	for _, part := range parts {
+		kind, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil {
+			t.Fatalf("invalid kind %q in %s", part, name)
+		}
+		kinds = append(kinds, kind)
+	}
+	return kinds
 }
 
 func TestHealth(t *testing.T) {
