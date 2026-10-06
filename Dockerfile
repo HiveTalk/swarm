@@ -22,7 +22,7 @@ ARG BUILT_AT=unknown
 RUN CGO_ENABLED=1 go build -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.builtAt=${BUILT_AT}" -o /app/swarm
 
 # Runtime - minimal Alpine image
-FROM alpine:3.22
+FROM alpine:3.24
 
 LABEL "language"="go"
 
