@@ -11,3 +11,6 @@ beeswax
 nip05-service
 clients/nostr-cms
 nostr-cms-dist
+node_modules/
+playwright-report/
+test-results/

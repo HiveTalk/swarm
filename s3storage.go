@@ -74,6 +74,11 @@ func NewS3Storage(cfg S3Config) (*S3Storage, error) {
 	}, nil
 }
 
+func (s *S3Storage) Ready(ctx context.Context) error {
+	_, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(s.bucket)})
+	return err
+}
+
 func (s *S3Storage) StoreBlob(ctx context.Context, sha256 string, body []byte) error {
 	contentType := detectContentType(body)
 

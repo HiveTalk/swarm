@@ -1,0 +1,76 @@
+name: Weekly dependency and security review
+
+on:
+  schedule:
+    - cron: '45 10 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  security-events: read
+  actions: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prs = await github.paginate(github.rest.pulls.list, { owner, repo, state: 'open', per_page: 100 });
+            const dependencyPRs = prs.filter(pr => pr.user?.login === 'dependabot[bot]');
+            let dependabotAlerts = [];
+            let codeAlerts = [];
+            try {
+              dependabotAlerts = await github.paginate(github.rest.dependabot.listAlertsForRepo, { owner, repo, state: 'open', per_page: 100 });
+            } catch (error) {
+              core.warning(`Dependabot alerts unavailable: ${error.message}`);
+            }
+            try {
+              codeAlerts = await github.paginate(github.rest.codeScanning.listAlertsForRepo, { owner, repo, state: 'open', per_page: 100 });
+            } catch (error) {
+              core.warning(`Code scanning alerts unavailable: ${error.message}`);
+            }
+            const runs = await github.rest.actions.listWorkflowRuns({ owner, repo, workflow_id: 'release.yml', branch: 'main', per_page: 1 });
+            const staging = runs.data.workflow_runs[0];
+            const dependencyLines = dependencyPRs.length
+              ? dependencyPRs.map(pr => `- [#${pr.number}](${pr.html_url}) ${pr.title}`).join('\n')
+              : '- None';
+            const dependabotLines = dependabotAlerts.length
+              ? dependabotAlerts.map(alert => `- ${alert.security_advisory?.severity || 'unknown'}: ${alert.dependency?.package?.name || 'unknown'} ([alert ${alert.number}](${alert.html_url}))`).join('\n')
+              : '- None';
+            const codeLines = codeAlerts.length
+              ? codeAlerts.map(alert => `- ${alert.rule?.security_severity_level || alert.rule?.severity || 'unknown'}: ${alert.rule?.description || alert.rule?.id} ([alert ${alert.number}](${alert.html_url}))`).join('\n')
+              : '- None';
+            const stagingLine = staging
+              ? `[${staging.conclusion || staging.status}](${staging.html_url}) for \`${staging.head_sha.slice(0, 12)}\``
+              : 'No release workflow run found';
+            const body = [
+              `Last updated: ${new Date().toISOString()}`,
+              '',
+              '## Open dependency pull requests',
+              dependencyLines,
+              '',
+              '## Open Dependabot alerts',
+              dependabotLines,
+              '',
+              '## Open code scanning alerts',
+              codeLines,
+              '',
+              '## Latest staging release',
+              stagingLine,
+              '',
+              'This issue is maintained automatically by the weekly review workflow.'
+            ].join('\n');
+            const title = 'Automated dependency and security review';
+            const issues = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: 'open', per_page: 100 });
+            const existing = issues.find(issue => issue.title === title && !issue.pull_request);
+            if (existing) {
+              await github.rest.issues.update({ owner, repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({ owner, repo, title, body });
+            }

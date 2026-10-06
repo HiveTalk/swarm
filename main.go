@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fiatjaf/eventstore/badger"
@@ -101,6 +102,10 @@ var db DBBackend
 var fs afero.Fs
 var config Config
 var s3Storage *S3Storage
+var nostrDataLoaded atomic.Bool
+var version = "dev"
+var commit = "unknown"
+var builtAt = "unknown"
 
 func main() {
 	relay = khatru.NewRelay()
@@ -265,12 +270,7 @@ func main() {
 		relay.Router().HandleFunc("/api/scheduler/delete", scheduler.HandleDelete)
 	}
 
-	// Health check endpoint for scheduler API
-	relay.Router().HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-	})
+	registerHealthHandlers(relay, config)
 
 	// Add NIP-05 service handlers
 	//	setupNIP05Handlers(relay, config)
@@ -605,6 +605,74 @@ func main() {
 	server.ListenAndServe()
 }
 
+func registerHealthHandlers(relay *khatru.Relay, config Config) {
+	relay.Router().HandleFunc("/health/live", func(w http.ResponseWriter, r *http.Request) {
+		writeHealthResponse(w, http.StatusOK, map[string]interface{}{
+			"status":   "live",
+			"version":  version,
+			"commit":   commit,
+			"built_at": builtAt,
+		})
+	})
+
+	readyHandler := func(readyStatus string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			checks := map[string]string{
+				"database": "ok",
+				"roster":   "ok",
+				"storage":  "disabled",
+			}
+			statusCode := http.StatusOK
+			ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+			defer cancel()
+
+			if _, err := db.CountEvents(ctx, nostr.Filter{Limit: 1}); err != nil {
+				checks["database"] = "error"
+				statusCode = http.StatusServiceUnavailable
+			}
+			if !nostrDataLoaded.Load() {
+				checks["roster"] = "error"
+				statusCode = http.StatusServiceUnavailable
+			}
+			if config.BlossomEnabled {
+				checks["storage"] = "ok"
+				if config.StorageBackend == "s3" {
+					if s3Storage == nil || s3Storage.Ready(ctx) != nil {
+						checks["storage"] = "error"
+						statusCode = http.StatusServiceUnavailable
+					}
+				} else if _, err := fs.Stat(*config.BlossomPath); err != nil {
+					checks["storage"] = "error"
+					statusCode = http.StatusServiceUnavailable
+				}
+			}
+
+			status := readyStatus
+			if statusCode != http.StatusOK {
+				status = "not_ready"
+			}
+			writeHealthResponse(w, statusCode, map[string]interface{}{
+				"status":   status,
+				"version":  version,
+				"commit":   commit,
+				"built_at": builtAt,
+				"checks":   checks,
+			})
+		}
+	}
+
+	relay.Router().HandleFunc("/health/ready", readyHandler("ready"))
+	relay.Router().HandleFunc("/api/health", readyHandler("ok"))
+}
+
+func writeHealthResponse(w http.ResponseWriter, statusCode int, payload map[string]interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(payload)
+}
+
 func fetchNostrData(npubDomain string) {
 	var body []byte
 	var err error
@@ -668,6 +736,7 @@ func fetchNostrData(npubDomain string) {
 	}
 
 	data = newData
+	nostrDataLoaded.Store(true)
 	for pubkey, names := range data.Names {
 		fmt.Println(pubkey, names)
 	}

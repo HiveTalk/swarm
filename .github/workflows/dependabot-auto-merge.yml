@@ -1,0 +1,37 @@
+name: Dependabot auto-merge
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  enable-auto-merge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - id: metadata
+        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - id: policy
+        env:
+          DEPENDENCIES: ${{ steps.metadata.outputs.dependency-names }}
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+        run: |
+          eligible=false
+          if [[ "$UPDATE_TYPE" == 'version-update:semver-patch' || "$UPDATE_TYPE" == 'version-update:semver-minor' ]]; then
+            eligible=true
+          fi
+          if [[ "$DEPENDENCIES" =~ github.com/fiatjaf/khatru|github.com/fiatjaf/eventstore|github.com/nbd-wtf/go-nostr ]]; then
+            eligible=false
+          fi
+          printf 'eligible=%s\n' "$eligible" >> "$GITHUB_OUTPUT"
+      - if: steps.policy.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"
