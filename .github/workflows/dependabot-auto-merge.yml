@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   merge-if-verified:
-    if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -88,6 +88,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           for attempt in 1 2 3; do
             if gh pr merge "$PR_URL" --squash --delete-branch; then
@@ -97,7 +98,8 @@ jobs:
               echo 'Unable to merge after updating the branch'
               exit 1
             fi
-            gh pr update-branch "$PR_URL"
+            head_sha=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .head.sha)
+            gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/update-branch" -X PUT -f expected_head_sha="$head_sha"
             deadline=$((SECONDS + 900))
             while :; do
               checks=$(gh pr view "$PR_URL" --json statusCheckRollup)
