@@ -71,32 +71,50 @@ func configuredKinds(t *testing.T, name string) []int {
 
 func TestHealth(t *testing.T) {
 	baseURL := relayURL(t)
+
+	getHealth := func(t *testing.T, path string) map[string]interface{} {
+		t.Helper()
+		response, err := http.Get(baseURL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(response.Body)
+			t.Fatalf("status = %d, body = %s", response.StatusCode, body)
+		}
+		var payload map[string]interface{}
+		if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		return payload
+	}
+
+	// /api/health is served by every deployed build. Builds that report
+	// build metadata also serve /health/live and /health/ready; older
+	// deployments expose /api/health alone.
+	apiHealth := getHealth(t, "/api/health")
+	t.Run("/api/health", func(t *testing.T) {
+		if apiHealth["status"] != "ok" {
+			t.Fatalf("status = %v, want %q", apiHealth["status"], "ok")
+		}
+	})
+
+	if _, versioned := apiHealth["commit"]; !versioned {
+		t.Log("deployed build does not serve /health endpoints; skipping")
+		return
+	}
 	for _, test := range []struct {
 		path   string
 		status string
 	}{
 		{path: "/health/live", status: "live"},
 		{path: "/health/ready", status: "ready"},
-		{path: "/api/health", status: "ok"},
 	} {
 		t.Run(test.path, func(t *testing.T) {
-			response, err := http.Get(baseURL + test.path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer response.Body.Close()
-			if response.StatusCode != http.StatusOK {
-				body, _ := io.ReadAll(response.Body)
-				t.Fatalf("status = %d, body = %s", response.StatusCode, body)
-			}
-			var payload struct {
-				Status string `json:"status"`
-			}
-			if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
-				t.Fatal(err)
-			}
-			if payload.Status != test.status {
-				t.Fatalf("status = %q, want %q", payload.Status, test.status)
+			payload := getHealth(t, test.path)
+			if payload["status"] != test.status {
+				t.Fatalf("status = %v, want %q", payload["status"], test.status)
 			}
 		})
 	}
