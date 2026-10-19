@@ -10,9 +10,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.9
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.3
 	github.com/fiatjaf/eventstore v0.17.14
-	github.com/fiatjaf/khatru v0.17.4
+	github.com/fiatjaf/khatru v0.19.1
 	github.com/joho/godotenv v1.5.1
-	github.com/nbd-wtf/go-nostr v0.52.1
+	github.com/nbd-wtf/go-nostr v0.52.3
 	github.com/spf13/afero v1.15.0
 	golang.org/x/term v0.47.0
 )
