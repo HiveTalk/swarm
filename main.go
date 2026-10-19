@@ -331,11 +331,11 @@ func main() {
 
 	if config.StorageBackend == "s3" && s3Storage != nil {
 		// S3 Storage Backend
-		bl.StoreBlob = append(bl.StoreBlob, func(ctx context.Context, sha256 string, body []byte) error {
+		bl.StoreBlob = append(bl.StoreBlob, func(ctx context.Context, sha256 string, ext string, body []byte) error {
 			return s3Storage.StoreBlob(ctx, sha256, body)
 		})
 
-		bl.LoadBlob = append(bl.LoadBlob, func(ctx context.Context, sha256 string) (io.ReadSeeker, error) {
+		bl.LoadBlob = append(bl.LoadBlob, func(ctx context.Context, sha256 string, ext string) (io.ReadSeeker, error) {
 			reader, redirectURL, err := s3Storage.LoadBlob(ctx, sha256)
 			if err != nil {
 				return nil, err
@@ -349,12 +349,12 @@ func main() {
 			return reader, nil
 		})
 
-		bl.DeleteBlob = append(bl.DeleteBlob, func(ctx context.Context, sha256 string) error {
+		bl.DeleteBlob = append(bl.DeleteBlob, func(ctx context.Context, sha256 string, ext string) error {
 			return s3Storage.DeleteBlob(ctx, sha256)
 		})
 	} else {
 		// Filesystem Storage Backend
-		bl.StoreBlob = append(bl.StoreBlob, func(ctx context.Context, sha256 string, body []byte) error {
+		bl.StoreBlob = append(bl.StoreBlob, func(ctx context.Context, sha256 string, ext string, body []byte) error {
 			// Create context with timeout for large file operations
 			storeCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 			defer cancel()
@@ -393,7 +393,7 @@ func main() {
 			return file.Sync() // Ensure data is written to disk
 		})
 
-		bl.LoadBlob = append(bl.LoadBlob, func(ctx context.Context, sha256 string) (io.ReadSeeker, error) {
+		bl.LoadBlob = append(bl.LoadBlob, func(ctx context.Context, sha256 string, ext string) (io.ReadSeeker, error) {
 			filePath := *config.BlossomPath + sha256
 			log.Printf("LoadBlob: Attempting to open file at path: %s", filePath)
 			file, err := fs.Open(filePath)
@@ -405,7 +405,7 @@ func main() {
 			return file, nil
 		})
 
-		bl.DeleteBlob = append(bl.DeleteBlob, func(ctx context.Context, sha256 string) error {
+		bl.DeleteBlob = append(bl.DeleteBlob, func(ctx context.Context, sha256 string, ext string) error {
 			return fs.Remove(*config.BlossomPath + sha256)
 		})
 	}
@@ -605,7 +605,7 @@ func main() {
 		// Store the blob using the existing StoreBlob functionality
 		ctx := r.Context()
 		for _, storeFunc := range bl.StoreBlob {
-			if err := storeFunc(ctx, blobHash, blobData); err != nil {
+			if err := storeFunc(ctx, blobHash, "", blobData); err != nil {
 				http.Error(w, fmt.Sprintf("Failed to store blob: %v", err), http.StatusInternalServerError)
 				return
 			}
