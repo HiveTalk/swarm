@@ -141,7 +141,7 @@ jobs:
       - name: Capture relay logs
         if: always()
         run: docker logs swarm-e2e > relay-e2e.log 2>&1 || true
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: failure()
         with:
           name: relay-e2e-debug
