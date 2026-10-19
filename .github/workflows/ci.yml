@@ -32,6 +32,8 @@ jobs:
           test "$module_toolchain" = "go$expected"
       - name: Verify formatting
         run: test -z "$(gofmt -l .)"
+      - name: Test merge workflow
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s test/workflows -v
       - name: Vet
         run: go vet ./...
       - name: Test
@@ -50,6 +52,9 @@ jobs:
           cache: true
       - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f
         with:
+          go-version-input: ''
+          go-version-file: .go-version
+          repo-checkout: false
           go-package: ./...
 
   dependency-review:

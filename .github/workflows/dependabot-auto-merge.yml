@@ -53,6 +53,14 @@ jobs:
             fi
           done < <(gh pr view "$PR_URL" --json files --jq '.files[].path')
           printf 'eligible=%s\n' "$eligible" >> "$GITHUB_OUTPUT"
+          {
+            printf '## Dependency merge policy\n\n'
+            printf 'Auto-merge eligible: **%s**\n\n' "$eligible"
+            printf 'Dependencies: %s\n\nUpdate type: %s\n\nEcosystem: %s\n\n' "$DEPENDENCIES" "$UPDATE_TYPE" "$PACKAGE_ECOSYSTEM"
+            if [[ "$eligible" != 'true' ]]; then
+              printf 'No merge or release was attempted. Docker images, GitHub Actions, sensitive relay/storage/crypto dependencies, major updates, maintainer changes, and unexpected files require human review.\n'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Wait for required checks
         if: steps.policy.outputs.eligible == 'true'
         env:
@@ -68,10 +76,10 @@ jobs:
           deadline=$((SECONDS + 900))
           while :; do
             checks=$(gh pr view "$PR_URL" --json statusCheckRollup)
-            failed=$(jq '[.statusCheckRollup[] | select(.name != "merge-if-verified" and .status == "COMPLETED" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED"))] | length' <<< "$checks")
-            pending=$(jq '[.statusCheckRollup[] | select(.name != "merge-if-verified" and .status != "COMPLETED")] | length' <<< "$checks")
+            failed=$(jq '[.statusCheckRollup[] | select(.name != "merge-if-verified") | select((.status == "COMPLETED" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED")) or .state == "FAILURE" or .state == "ERROR")] | length' <<< "$checks")
+            pending=$(jq '[.statusCheckRollup[] | select(.name != "merge-if-verified") | select((.status != null and .status != "COMPLETED") or .state == "PENDING" or .state == "EXPECTED")] | length' <<< "$checks")
             if [[ "$failed" -gt 0 ]]; then
-              jq -r '.statusCheckRollup[] | select(.name != "merge-if-verified" and .status == "COMPLETED" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED")) | "Failing check: \(.name) (\(.conclusion))"' <<< "$checks"
+              jq -r '.statusCheckRollup[] | select(.name != "merge-if-verified") | select((.status == "COMPLETED" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED")) or .state == "FAILURE" or .state == "ERROR") | "Failing check: \(.name // .context) (\(.conclusion // .state))"' <<< "$checks"
               exit 1
             fi
             if [[ "$pending" -eq 0 ]]; then
@@ -90,8 +98,9 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          head_sha=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .head.sha)
           for attempt in 1 2 3; do
-            if gh pr merge "$PR_URL" --squash --delete-branch; then
+            if gh pr merge "$PR_URL" --squash --delete-branch --match-head-commit "$head_sha"; then
               exit 0
             fi
             if [[ "$attempt" -eq 3 ]]; then
@@ -99,22 +108,41 @@ jobs:
               exit 1
             fi
             head_sha=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .head.sha)
+            previous_head="$head_sha"
             gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/update-branch" -X PUT -f expected_head_sha="$head_sha"
             deadline=$((SECONDS + 900))
             while :; do
-              checks=$(gh pr view "$PR_URL" --json statusCheckRollup)
-              failed=$(jq '[.statusCheckRollup[] | select(.name != "merge-if-verified" and .status == "COMPLETED" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED"))] | length' <<< "$checks")
-              pending=$(jq '[.statusCheckRollup[] | select(.name != "merge-if-verified" and .status != "COMPLETED")] | length' <<< "$checks")
-              if [[ "$failed" -gt 0 ]]; then
-                jq -r '.statusCheckRollup[] | select(.name != "merge-if-verified" and .status == "COMPLETED" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED")) | "Failing check: \(.name) (\(.conclusion))"' <<< "$checks"
-                exit 1
-              fi
-              if [[ "$pending" -eq 0 ]]; then
-                break
-              fi
               if [[ "$SECONDS" -gt "$deadline" ]]; then
                 echo 'Timed out waiting for checks after branch update'
                 exit 1
+              fi
+              head_sha=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .head.sha)
+              if [[ "$head_sha" == "$previous_head" ]]; then
+                sleep 15
+                continue
+              fi
+              checks=$(gh pr view "$PR_URL" --json headRefOid,statusCheckRollup)
+              if [[ "$(jq -r .headRefOid <<< "$checks")" != "$head_sha" ]]; then
+                sleep 15
+                continue
+              fi
+              runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$head_sha&event=pull_request")
+              if [[ "$(jq -r '.workflow_runs[0].conclusion' <<< "$runs")" == 'action_required' ]]; then
+                echo '::error::CI requires maintainer approval for the updated Dependabot branch. A maintainer must approve CI and review/merge this updated PR.'
+                jq -r '.workflow_runs[0] | "CI run: \(.html_url)"' <<< "$runs"
+                exit 1
+              fi
+              failed=$(jq '[.statusCheckRollup[] | select(.name != "merge-if-verified") | select((.status == "COMPLETED" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED")) or .state == "FAILURE" or .state == "ERROR")] | length' <<< "$checks")
+              pending=$(jq '[.statusCheckRollup[] | select(.name != "merge-if-verified") | select((.status != null and .status != "COMPLETED") or .state == "PENDING" or .state == "EXPECTED")] | length' <<< "$checks")
+              if [[ "$failed" -gt 0 ]]; then
+                jq -r '.statusCheckRollup[] | select(.name != "merge-if-verified") | select((.status == "COMPLETED" and (.conclusion != "SUCCESS" and .conclusion != "NEUTRAL" and .conclusion != "SKIPPED")) or .state == "FAILURE" or .state == "ERROR") | "Failing check: \(.name // .context) (\(.conclusion // .state))"' <<< "$checks"
+                exit 1
+              fi
+              if [[ "$pending" -eq 0 ]]; then
+                if required=$(gh pr checks "$PR_URL" --required) && [[ "$required" == *$'\tpass\t'* ]]; then
+                  printf '%s\n' "$required"
+                  break
+                fi
               fi
               sleep 15
             done
