@@ -585,7 +585,9 @@ func checkAuth(r *http.Request) (string, error) {
 		return "", fmt.Errorf("invalid event signature")
 	}
 
-	// Reconstruct full request URL for comparison
+	// Reconstruct the request URL for comparison. Clients fronted by a
+	// proxy/platform rewrite (e.g. Vercel /api/* -> swarm) sign the public
+	// URL, so also accept the X-Forwarded-Host form.
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
@@ -594,13 +596,17 @@ func checkAuth(r *http.Request) (string, error) {
 		scheme = fwdProto
 	}
 	fullURL := scheme + "://" + r.Host + r.URL.RequestURI()
+	forwardedURL := ""
+	if fwdHost := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); fwdHost != "" && fwdHost != r.Host {
+		forwardedURL = scheme + "://" + fwdHost + r.URL.RequestURI()
+	}
 
 	// Check u tag matches request URL (fix potential panic)
 	uTag := event.Tags.GetFirst([]string{"u", ""})
 	if uTag == nil || len(*uTag) < 2 {
 		return "", fmt.Errorf("missing or malformed u tag in NIP-98 token")
 	}
-	if (*uTag)[1] != fullURL {
+	if (*uTag)[1] != fullURL && (forwardedURL == "" || (*uTag)[1] != forwardedURL) {
 		return "", fmt.Errorf("URL mismatch in NIP-98 token")
 	}
 
