@@ -89,7 +89,7 @@ Use these when you want to store media in S3-compatible storage instead of the l
 
 **Path Examples:**
 - **Local Development:** `public/.well-known/nostr.json`
-- **Docker/Zeabur:** `/app/public/.well-known/nostr.json`
+- **Docker:** `/app/public/.well-known/nostr.json`
 
 ## Event Kind Filtering
 

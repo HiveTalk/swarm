@@ -53,7 +53,7 @@ WEBSOCKET_URL=wss://localhost:3777
 
 ## 🚀 Ideal - PostgreSQL + S3 Tigris
 
-**For production deployment on Zeabur:**
+**For production deployment:**
 
 ```bash
 # Required
@@ -131,17 +131,17 @@ BLOSSOM_ENABLED=true
 DB_ENGINE=badger
 ```
 
-### Production on Zeabur (Environment Variables)
+### Production (Environment Variables)
 ```bash
 # Core required
 RELAY_PUBKEY="d7416884c7c468ad9e5fd1f2538c7f893318e074998e3538bc827155ef598706"
 RELAY_NAME="Production Relay"
 
-# Database (use Zeabur's PostgreSQL)
+# Database (managed PostgreSQL)
 DB_ENGINE=postgres
 DATABASE_URL=${DATABASE_URL}
 
-# Storage (use Zeabur's S3/Tigris)
+# Storage (S3-compatible, e.g. Tigris)
 STORAGE_BACKEND=s3
 S3_ENDPOINT=${S3_ENDPOINT}
 S3_BUCKET=${S3_BUCKET}
@@ -227,6 +227,5 @@ That's it! The relay will start with your chosen configuration. 🎉
 
 ## 📚 Additional Resources
 
-- [ZEABUR_DEPLOYMENT.md](ZEABUR_DEPLOYMENT.md) - Zeabur-specific deployment guide
 - [ENV_VARIABLES.md](ENV_VARIABLES.md) - Complete environment variable reference
-- [ENV_TEMPLATE.txt](ENV_TEMPLATE.txt) - Template for Zeabur environment variables
+- [ENV_TEMPLATE.txt](ENV_TEMPLATE.txt) - Template for environment variables

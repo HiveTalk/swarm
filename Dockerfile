@@ -146,7 +146,7 @@ EXPOSE 3334
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 CMD curl -fsS http://127.0.0.1:${RELAY_PORT:-3334}/health/ready || exit 1
 
-# Set default environment variables (can be overridden by Zeabur env vars)
+# Set default environment variables (can be overridden at runtime)
 ENV CGO_ENABLED=1
 ENV DOCKER_ENV=true
 ENV RELAY_PORT=3334
