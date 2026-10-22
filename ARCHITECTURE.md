@@ -61,7 +61,7 @@ repository root.
 | `public/`           | Static assets served at `/public/*` (images, `dashboard.html`, `convert.html`, `js/NostrLogin.js`). |
 | `templates/`        | Server-rendered HTML templates (`dashboard_view.html`).                       |
 | `setup/`            | Operational scripts (`deploy.sh`, `upload.sh`, `blossom-upload.go`, nginx config). |
-| `Dockerfile`, `docker-compose.yml`, `fly.toml`, `zeabur.yaml` | Container & deployment manifests. |
+| `Dockerfile`, `docker-compose.yml`, `fly.toml` | Container & deployment manifests. |
 | `.env.example`, `ENV_VARIABLES.md`, `ENV_CONFIG_GUIDE.md` | Configuration reference. |
 
 ## Core components
@@ -292,7 +292,6 @@ chosen database (when using Postgres). Deployment options:
 - **Docker** — `Dockerfile` produces a minimal Alpine image; `docker-compose.yml`
   runs it with the embedded Badger backend.
 - **Fly.io** — `fly.toml` (pairs naturally with the Tigris S3 backend).
-- **Zeabur** — `zeabur.yaml` and `ZEABUR_DEPLOYMENT.md`.
 
 In all cases a reverse proxy (e.g. nginx, see `setup/nginx-config-update.conf`)
 is recommended for TLS termination in front of `RELAY_PORT`.

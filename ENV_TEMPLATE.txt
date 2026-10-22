@@ -1,5 +1,5 @@
 # Swarm Relay - Environment Variables Template
-# Copy these to your Zeabur environment settings
+# Copy these to your deployment environment settings
 
 # === DEVELOPMENT ===
 DOCKER_ENV=false
