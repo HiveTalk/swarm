@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -97,6 +98,91 @@ func dashboardCookieSecure() bool {
 		return strings.EqualFold(strings.TrimSpace(value), "true")
 	}
 	return os.Getenv("DOCKER_ENV") == "true"
+}
+
+// verifyNIP98Request validates a NIP-98 "Authorization: Nostr <base64-event>"
+// header and returns the signer's pubkey. The signed kind-27235 event must be
+// fresh, bound to this request's method and URL path, and carry a payload hash
+// matching the request body when a body is present.
+//
+// The u tag's host must match either the request Host or X-Forwarded-Host so
+// deployments fronted by a reverse proxy / platform rewrite (where the client
+// signs the public-facing URL) still verify.
+func verifyNIP98Request(r *http.Request) (string, error) {
+	authHeader := r.Header.Get("Authorization")
+	const prefix = "Nostr "
+	if !strings.HasPrefix(authHeader, prefix) || len(authHeader) <= len(prefix) {
+		return "", fmt.Errorf("missing or malformed NIP-98 Authorization header")
+	}
+
+	eventJSON, err := base64.StdEncoding.DecodeString(authHeader[len(prefix):])
+	if err != nil {
+		return "", fmt.Errorf("invalid base64 token: %w", err)
+	}
+
+	var event nostr.Event
+	if err := json.Unmarshal(eventJSON, &event); err != nil {
+		return "", fmt.Errorf("invalid event JSON: %w", err)
+	}
+
+	if event.Kind != 27235 {
+		return "", fmt.Errorf("invalid event kind for NIP-98: %d", event.Kind)
+	}
+
+	ok, err := event.CheckSignature()
+	if !ok || err != nil {
+		return "", fmt.Errorf("invalid event signature")
+	}
+
+	createdAt := time.Unix(int64(event.CreatedAt), 0)
+	if time.Since(createdAt) > 5*time.Minute || time.Until(createdAt) > time.Minute {
+		return "", fmt.Errorf("stale or future-dated NIP-98 token")
+	}
+
+	uTag := event.Tags.GetFirst([]string{"u", ""})
+	if uTag == nil || len(*uTag) < 2 {
+		return "", fmt.Errorf("missing or malformed u tag in NIP-98 token")
+	}
+	signedURL, err := url.Parse((*uTag)[1])
+	if err != nil || signedURL.Path == "" {
+		return "", fmt.Errorf("invalid u tag URL in NIP-98 token")
+	}
+	// Bind the token to this endpoint: path + query must match the request.
+	// Host may differ when a proxy fronts the relay (clients sign the public
+	// URL), so accept Host or X-Forwarded-Host.
+	signedHost := strings.ToLower(signedURL.Host)
+	allowedHost := strings.ToLower(r.Host)
+	forwardedHost := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Host")))
+	if signedHost != allowedHost && (forwardedHost == "" || signedHost != forwardedHost) {
+		return "", fmt.Errorf("u tag host mismatch in NIP-98 token")
+	}
+	if signedURL.RequestURI() != r.URL.RequestURI() {
+		return "", fmt.Errorf("u tag path mismatch in NIP-98 token")
+	}
+
+	methodTag := event.Tags.GetFirst([]string{"method", ""})
+	if methodTag == nil || len(*methodTag) < 2 {
+		return "", fmt.Errorf("missing or malformed method tag in NIP-98 token")
+	}
+	if !strings.EqualFold((*methodTag)[1], r.Method) {
+		return "", fmt.Errorf("method mismatch in NIP-98 token")
+	}
+
+	// If the event carries a payload tag it must hash the exact request body;
+	// restore the body so downstream handlers can still read it.
+	if payloadTag := event.Tags.GetFirst([]string{"payload", ""}); payloadTag != nil && len(*payloadTag) >= 2 {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			return "", fmt.Errorf("could not read request body")
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		sum := sha256.Sum256(body)
+		if !strings.EqualFold((*payloadTag)[1], hex.EncodeToString(sum[:])) {
+			return "", fmt.Errorf("payload hash mismatch in NIP-98 token")
+		}
+	}
+
+	return event.PubKey, nil
 }
 
 type NostrData struct {
@@ -1546,6 +1632,24 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 	}
 
 	requireAdminSession := func(w http.ResponseWriter, r *http.Request) bool {
+		adminPubkey := resolveDashboardAdminPubkey(config)
+
+		// NIP-98: a signed Authorization header authenticates without cookies.
+		// Used by the CMS frontend so admin calls don't depend on session state.
+		if strings.HasPrefix(r.Header.Get("Authorization"), "Nostr ") {
+			pubkey, err := verifyNIP98Request(r)
+			if err != nil {
+				log.Printf("Admin API auth failed: %v", err)
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return false
+			}
+			if !strings.EqualFold(pubkey, adminPubkey) {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return false
+			}
+			return true
+		}
+
 		cookie, err := r.Cookie("dashboard_session")
 		if err != nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -1558,7 +1662,6 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 			return false
 		}
 		session := sessionValue.(dashboardSession)
-		adminPubkey := resolveDashboardAdminPubkey(config)
 		if time.Now().After(session.ExpiresAt) || !strings.EqualFold(session.Pubkey, adminPubkey) {
 			dashboardSessions.Delete(cookie.Value)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -1834,6 +1937,10 @@ func setupDashboardHandlers(relay *khatru.Relay, config Config) {
 	registerAdminAPI("/environment", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		if !requireAdminSession(w, r) {
 			return
 		}
 
