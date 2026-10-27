@@ -10,14 +10,19 @@ import (
 )
 
 // XAccount links a nostr pubkey (team member in nostr.json) to an X/Twitter
-// user obtained via the OAuth 1.0a 3-legged flow. AccessToken/AccessSecret are
-// the user-context credentials used to sign POST /2/tweets calls.
+// identity. Two modes:
+//   - "local": this relay holds the X app consumer credentials and the user's
+//     OAuth tokens (AccessToken/AccessSecret) and posts directly.
+//   - "delegate": a shared xpost service holds all X credentials; this relay
+//     only keeps a per-link LinkToken used to call its /v1/post endpoint.
 type XAccount struct {
 	UserPubkey    string     `json:"user_pubkey"`
+	Mode          string     `json:"mode,omitempty"` // "local" (default) or "delegate"
 	TwitterUserID string     `json:"twitter_user_id"`
 	ScreenName    string     `json:"screen_name"`
-	AccessToken   string     `json:"access_token"`
-	AccessSecret  string     `json:"access_secret"`
+	AccessToken   string     `json:"access_token,omitempty"`
+	AccessSecret  string     `json:"access_secret,omitempty"`
+	LinkToken     string     `json:"link_token,omitempty"`
 	Enabled       bool       `json:"enabled"`
 	LinkedAt      time.Time  `json:"linked_at"`
 	LastPostedAt  *time.Time `json:"last_posted_at,omitempty"`

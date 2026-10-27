@@ -67,6 +67,8 @@ type Config struct {
 	// X/Twitter crossposting (app-level OAuth 1.0a consumer credentials)
 	TwitterKey       string
 	TwitterKeySecret string
+	// Delegate mode: shared xpost service base URL (alternative to local creds)
+	XPostServiceURL string
 }
 
 // resolveDashboardAdminPubkey picks the operator key for dashboard auth.
@@ -404,15 +406,16 @@ func main() {
 		if config.WebSocketURL != nil {
 			relayWS = *config.WebSocketURL
 		}
-		crossposter := NewCrossposter(xAccounts, config.TwitterKey, config.TwitterKeySecret, relayWS)
+		crossposter := NewCrossposter(xAccounts, config.TwitterKey, config.TwitterKeySecret, config.XPostServiceURL, relayWS)
 		relay.OnEventSaved = append(relay.OnEventSaved, crossposter.OnEventSaved)
 		relay.Router().HandleFunc("/api/x/status", crossposter.HandleStatus)
 		relay.Router().HandleFunc("/api/x/auth/start", crossposter.HandleAuthStart)
 		relay.Router().HandleFunc("/api/x/auth/callback", crossposter.HandleAuthCallback)
+		relay.Router().HandleFunc("/api/x/linked", crossposter.HandleLinked)
 		relay.Router().HandleFunc("/api/x/disconnect", crossposter.HandleDisconnect)
 		relay.Router().HandleFunc("/api/x/toggle", crossposter.HandleToggle)
 		if !crossposter.configured() {
-			log.Println("X crossposting available but dormant: TWITTER_KEY/TWITTER_KEY_SECRET not set")
+			log.Println("X crossposting available but dormant: set TWITTER_KEY/TWITTER_KEY_SECRET or XPOST_SERVICE_URL")
 		}
 	}
 
@@ -940,6 +943,7 @@ func LoadConfig() Config {
 		// X/Twitter crossposting
 		TwitterKey:       getEnvWithDefault("TWITTER_KEY", ""),
 		TwitterKeySecret: getEnvWithDefault("TWITTER_KEY_SECRET", ""),
+		XPostServiceURL:  getEnvWithDefault("XPOST_SERVICE_URL", ""),
 	}
 
 	relay.Info.Name = config.RelayName

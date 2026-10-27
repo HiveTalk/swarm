@@ -123,10 +123,37 @@ panel (Crossposting tab) and have their kind-1 notes automatically posted to
 X — both notes published live and notes published by the scheduler. Replies
 (any `e` tag) and non-kind-1 events are never crossposted.
 
+Two modes, pick one:
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `TWITTER_KEY` | X app OAuth 1.0a consumer key | `""` (feature dormant) |
-| `TWITTER_KEY_SECRET` | X app OAuth 1.0a consumer secret | `""` |
+| `XPOST_SERVICE_URL` | Base URL of a shared `xpost` service (delegate mode — recommended) | `""` |
+| `TWITTER_KEY` | X app OAuth 1.0a consumer key (local mode) | `""` (feature dormant) |
+| `TWITTER_KEY_SECRET` | X app OAuth 1.0a consumer secret (local mode) | `""` |
+
+If `XPOST_SERVICE_URL` is set it takes precedence; `TWITTER_KEY*` are then
+only used as a fallback for accounts already linked in local mode.
+
+### Delegate mode (recommended): the shared `xpost` service
+
+One `xpost` deployment holds a single X developer app and serves any number of
+relays — relay operators do **not** need their own X credentials. See
+`docs/XPOST.md` for the full setup walkthrough.
+
+Run it (`go build ./cmd/xpost`) with:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `TWITTER_KEY` | X app OAuth 1.0a consumer key | required |
+| `TWITTER_KEY_SECRET` | X app OAuth 1.0a consumer secret | required |
+| `XPOST_PUBLIC_URL` | Externally reachable base URL, e.g. `https://xpost.example.com` | required |
+| `PORT` | Listen port | `8090` |
+| `XPOST_DB_PATH` | Directory for `xpost_accounts.json` | `./xpost-data` |
+
+Register `https://<xpost-host>/v1/link/callback` as the X app's Callback URI,
+then set `XPOST_SERVICE_URL=https://<xpost-host>` on each relay.
+
+### Local mode
 
 **X developer app setup:**
 1. Create an app in the [X developer portal](https://developer.x.com/) — it must

@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -11,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/hivetalk/swarm/internal/xclient"
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip19"
 )
@@ -20,6 +24,12 @@ import (
 // websocket-published notes and scheduler-published notes (relay.AddEvent
 // fires OnEventSaved after storing).
 //
+// Two posting modes:
+//   - local: TWITTER_KEY/TWITTER_KEY_SECRET set — this relay runs the OAuth
+//     flow itself and signs tweets directly.
+//   - delegate: XPOST_SERVICE_URL set — a shared xpost service runs the OAuth
+//     flow and posts tweets; this relay keeps only a per-link bearer token.
+//
 // Matching rules (all must hold):
 //   - event kind is 1
 //   - author has a linked X account with Enabled=true
@@ -28,13 +38,17 @@ import (
 //     tag quotes do)
 //   - event ID not already posted (dedupe)
 type Crossposter struct {
-	store    *XAccountStore
-	oauth    *xOAuthClient
-	enabled  bool   // false when TWITTER_KEY/SECRET are unset
-	relayURL string // e.g. "wss://example.com" — included as nevent relay hint
+	store      *XAccountStore
+	oauth      *xclient.Client
+	serviceURL string // delegate service base URL, "" when in local mode
+	enabled    bool   // false when neither mode is configured
+	relayURL   string // e.g. "wss://example.com" — included as nevent relay hint
 
 	pendingMu sync.Mutex
-	pending   map[string]*xPendingAuth // oauth request token → pending link
+	pending   map[string]*xPendingAuth // oauth request token → pending link (local mode)
+
+	linkPendingMu sync.Mutex
+	linkPending   map[string]*xLinkPending // nonce → pending delegate link
 }
 
 type xPendingAuth struct {
@@ -44,13 +58,24 @@ type xPendingAuth struct {
 	ExpiresAt   time.Time
 }
 
-func NewCrossposter(store *XAccountStore, consumerKey, consumerSecret, relayWSURL string) *Crossposter {
+// xLinkPending binds a delegate-mode link notification (/api/x/linked) to the
+// auth-start that produced it, so a forged notification can't attach a token
+// to an arbitrary pubkey.
+type xLinkPending struct {
+	Pubkey    string
+	ExpiresAt time.Time
+}
+
+func NewCrossposter(store *XAccountStore, consumerKey, consumerSecret, serviceURL, relayWSURL string) *Crossposter {
+	serviceURL = strings.TrimRight(serviceURL, "/")
 	return &Crossposter{
-		store:    store,
-		oauth:    newXOAuthClient(consumerKey, consumerSecret),
-		enabled:  consumerKey != "" && consumerSecret != "",
-		relayURL: relayWSURL,
-		pending:  make(map[string]*xPendingAuth),
+		store:       store,
+		oauth:       xclient.New(consumerKey, consumerSecret),
+		serviceURL:  serviceURL,
+		enabled:     (consumerKey != "" && consumerSecret != "") || serviceURL != "",
+		relayURL:    relayWSURL,
+		pending:     make(map[string]*xPendingAuth),
+		linkPending: make(map[string]*xLinkPending),
 	}
 }
 
@@ -101,7 +126,14 @@ func (c *Crossposter) crosspost(event *nostr.Event) {
 	}
 
 	text := buildTweetText(event, c.relayURL)
-	tweetID, err := c.oauth.postTweet(ctx, acct, text)
+
+	var tweetID string
+	var err error
+	if acct.Mode == "delegate" {
+		tweetID, err = xclient.PostViaService(ctx, c.serviceURL, acct.LinkToken, acct.UserPubkey, event.ID, text)
+	} else {
+		tweetID, err = c.oauth.PostTweet(ctx, acct.AccessToken, acct.AccessSecret, text)
+	}
 
 	now := time.Now()
 	if err != nil {
@@ -284,9 +316,12 @@ func (c *Crossposter) enableCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 }
 
-// configured reports whether the X app credentials are set. When false all
-// crosspost endpoints still work but the flow can't start (status reports it).
+// configured reports whether crossposting can run — either local X app
+// credentials or a delegate service URL is set.
 func (c *Crossposter) configured() bool { return c.enabled }
+
+// delegateMode reports whether links/posts route through the shared service.
+func (c *Crossposter) delegateMode() bool { return c.serviceURL != "" }
 
 // requestOrigin returns the CMS origin for post-callback redirect. Prefer the
 // explicit return_to passed by the frontend (validated to http/https scheme);
@@ -375,6 +410,8 @@ func (c *Crossposter) HandleStatus(w http.ResponseWriter, r *http.Request) {
 
 // HandleAuthStart: POST /api/x/auth/start — NIP-98 authed. Body:
 // {"return_to": "https://cms.example.com"}. Returns {"authorize_url": "..."}.
+// In delegate mode the request is forwarded to the shared service, which
+// issues the X authorize URL directly.
 func (c *Crossposter) HandleAuthStart(w http.ResponseWriter, r *http.Request) {
 	c.enableCORS(w)
 	if r.Method == "OPTIONS" {
@@ -391,7 +428,7 @@ func (c *Crossposter) HandleAuthStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !c.configured() {
-		http.Error(w, "X crossposting is not configured on this server (missing TWITTER_KEY/TWITTER_KEY_SECRET)", http.StatusServiceUnavailable)
+		http.Error(w, "X crossposting is not configured on this server", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -401,7 +438,16 @@ func (c *Crossposter) HandleAuthStart(w http.ResponseWriter, r *http.Request) {
 	// Body optional — tolerate empty.
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
-	token, secret, err := c.oauth.requestToken(r.Context(), c.callbackURL(r))
+	if c.delegateMode() {
+		c.handleAuthStartDelegate(w, r, pubkey, req.ReturnTo)
+		return
+	}
+	c.handleAuthStartLocal(w, r, pubkey, req.ReturnTo)
+}
+
+// handleAuthStartLocal runs the 3-legged flow against X directly (local mode).
+func (c *Crossposter) handleAuthStartLocal(w http.ResponseWriter, r *http.Request, pubkey, returnTo string) {
+	token, secret, err := c.oauth.RequestToken(r.Context(), c.callbackURL(r))
 	if err != nil {
 		logWithFields("error", "X request_token failed", map[string]interface{}{
 			"pubkey": pubkey,
@@ -412,26 +458,171 @@ func (c *Crossposter) HandleAuthStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	c.pendingMu.Lock()
-	// Sweep expired pendings while we're under the lock — entries are only
-	// removed when their callback lands, so abandoned flows would linger.
-	now := time.Now()
-	for k, p := range c.pending {
-		if now.After(p.ExpiresAt) {
-			delete(c.pending, k)
-		}
-	}
+	now := sweepPendings(c.pending)
 	c.pending[token] = &xPendingAuth{
 		Pubkey:      pubkey,
 		TokenSecret: secret,
-		ReturnTo:    requestOrigin(r, req.ReturnTo),
+		ReturnTo:    requestOrigin(r, returnTo),
 		ExpiresAt:   now.Add(10 * time.Minute),
 	}
 	c.pendingMu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
-		"authorize_url": xAuthorizeURL + "?oauth_token=" + url.QueryEscape(token),
+		"authorize_url": xclient.AuthorizeURL + "?oauth_token=" + url.QueryEscape(token),
 	})
+}
+
+// sweepPendings drops expired entries and returns the time used for the check.
+func sweepPendings(pending map[string]*xPendingAuth) time.Time {
+	now := time.Now()
+	for k, p := range pending {
+		if now.After(p.ExpiresAt) {
+			delete(pending, k)
+		}
+	}
+	return now
+}
+
+// handleAuthStartDelegate asks the shared service to start a link flow. It
+// passes a nonce that the service echoes in its /api/x/linked notification,
+// binding the link_token delivery to this relay-initiated flow.
+func (c *Crossposter) handleAuthStartDelegate(w http.ResponseWriter, r *http.Request, pubkey, returnTo string) {
+	nonceBytes := make([]byte, 16)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	nonce := hex.EncodeToString(nonceBytes)
+
+	payload, _ := json.Marshal(map[string]string{
+		"pubkey":    pubkey,
+		"relay":     requestOrigin(r, ""),
+		"return_to": requestOrigin(r, returnTo),
+		"nonce":     nonce,
+	})
+
+	reqCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	sreq, err := http.NewRequestWithContext(reqCtx, "POST", c.serviceURL+"/v1/link/start", bytes.NewReader(payload))
+	if err != nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+	sreq.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(sreq)
+	if err != nil {
+		logWithFields("error", "delegate link/start unreachable", map[string]interface{}{
+			"pubkey": pubkey,
+			"error":  err.Error(),
+		})
+		http.Error(w, "Crossposting service unreachable", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	var svcResp struct {
+		AuthorizeURL string `json:"authorize_url"`
+		Error        string `json:"error"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&svcResp)
+	if resp.StatusCode != http.StatusOK || svcResp.AuthorizeURL == "" {
+		logWithFields("error", "delegate link/start failed", map[string]interface{}{
+			"pubkey": pubkey,
+			"status": resp.Status,
+			"detail": svcResp.Error,
+		})
+		http.Error(w, "Failed to start X authorization", http.StatusBadGateway)
+		return
+	}
+
+	c.linkPendingMu.Lock()
+	c.linkPending[nonce] = &xLinkPending{Pubkey: pubkey, ExpiresAt: time.Now().Add(10 * time.Minute)}
+	c.linkPendingMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"authorize_url": svcResp.AuthorizeURL})
+}
+
+// HandleLinked: POST /api/x/linked — called by the delegate service after a
+// user completes X authorization. Delivers the per-link bearer token.
+func (c *Crossposter) HandleLinked(w http.ResponseWriter, r *http.Request) {
+	c.enableCORS(w)
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !c.delegateMode() {
+		http.Error(w, "Not in delegate mode", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Nonce         string `json:"nonce"`
+		Pubkey        string `json:"pubkey"`
+		ScreenName    string `json:"screen_name"`
+		TwitterUserID string `json:"twitter_user_id"`
+		LinkToken     string `json:"link_token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Nonce == "" || req.LinkToken == "" {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	c.linkPendingMu.Lock()
+	pending, ok := c.linkPending[req.Nonce]
+	if ok {
+		delete(c.linkPending, req.Nonce)
+	}
+	// Sweep expired while holding the lock.
+	now := time.Now()
+	for k, p := range c.linkPending {
+		if now.After(p.ExpiresAt) {
+			delete(c.linkPending, k)
+		}
+	}
+	c.linkPendingMu.Unlock()
+
+	if !ok || pending.Pubkey != req.Pubkey || now.After(pending.ExpiresAt) {
+		logWithFields("warn", "linked notification with unknown/stale nonce", map[string]interface{}{
+			"pubkey": req.Pubkey,
+		})
+		http.Error(w, "Unknown or expired link", http.StatusForbidden)
+		return
+	}
+
+	acct := &XAccount{
+		UserPubkey:    req.Pubkey,
+		Mode:          "delegate",
+		TwitterUserID: req.TwitterUserID,
+		ScreenName:    req.ScreenName,
+		LinkToken:     req.LinkToken,
+		Enabled:       true,
+		LinkedAt:      now,
+	}
+	if prev := c.store.Get(req.Pubkey); prev != nil {
+		acct.PostedIDs = prev.PostedIDs
+		acct.LastPostedAt = prev.LastPostedAt
+		if prev.TwitterUserID != req.TwitterUserID {
+			acct.PostedIDs = nil
+			acct.LastPostedAt = nil
+		}
+	}
+	if err := c.store.Put(acct); err != nil {
+		http.Error(w, "Failed to save link", http.StatusInternalServerError)
+		return
+	}
+
+	logWithFields("info", "X account linked (delegate)", map[string]interface{}{
+		"pubkey":      req.Pubkey,
+		"screen_name": req.ScreenName,
+	})
+	w.WriteHeader(http.StatusOK)
 }
 
 // HandleAuthCallback: GET /api/x/auth/callback — public; X redirects the
@@ -472,7 +663,7 @@ func (c *Crossposter) HandleAuthCallback(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	accessToken, accessSecret, userID, screenName, err := c.oauth.accessToken(r.Context(), token, pending.TokenSecret, verifier)
+	accessToken, accessSecret, userID, screenName, err := c.oauth.AccessToken(r.Context(), token, pending.TokenSecret, verifier)
 	if err != nil {
 		logWithFields("error", "X access_token exchange failed", map[string]interface{}{
 			"pubkey": pending.Pubkey,
@@ -484,6 +675,7 @@ func (c *Crossposter) HandleAuthCallback(w http.ResponseWriter, r *http.Request)
 
 	acct := &XAccount{
 		UserPubkey:    pending.Pubkey,
+		Mode:          "local",
 		TwitterUserID: userID,
 		ScreenName:    screenName,
 		AccessToken:   accessToken,
@@ -534,6 +726,22 @@ func (c *Crossposter) HandleDisconnect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+
+	// Delegate accounts also exist on the shared service — ask it to drop the
+	// X tokens (best-effort; local link is removed regardless).
+	if acct := c.store.Get(pubkey); acct != nil && acct.Mode == "delegate" && c.delegateMode() {
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+		payload, _ := json.Marshal(map[string]string{"pubkey": pubkey})
+		if req, err := http.NewRequestWithContext(ctx, "POST", c.serviceURL+"/v1/unlink", bytes.NewReader(payload)); err == nil {
+			req.Header.Set("Authorization", "Bearer "+acct.LinkToken)
+			req.Header.Set("Content-Type", "application/json")
+			if resp, err := http.DefaultClient.Do(req); err == nil {
+				resp.Body.Close()
+			}
+		}
+	}
+
 	if err := c.store.Delete(pubkey); err != nil {
 		http.Error(w, "Failed to disconnect", http.StatusInternalServerError)
 		return
