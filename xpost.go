@@ -412,11 +412,19 @@ func (c *Crossposter) HandleAuthStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	c.pendingMu.Lock()
+	// Sweep expired pendings while we're under the lock — entries are only
+	// removed when their callback lands, so abandoned flows would linger.
+	now := time.Now()
+	for k, p := range c.pending {
+		if now.After(p.ExpiresAt) {
+			delete(c.pending, k)
+		}
+	}
 	c.pending[token] = &xPendingAuth{
 		Pubkey:      pubkey,
 		TokenSecret: secret,
 		ReturnTo:    requestOrigin(r, req.ReturnTo),
-		ExpiresAt:   time.Now().Add(10 * time.Minute),
+		ExpiresAt:   now.Add(10 * time.Minute),
 	}
 	c.pendingMu.Unlock()
 
