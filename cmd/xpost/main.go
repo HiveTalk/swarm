@@ -123,6 +123,10 @@ type server struct {
 	pendingMu  sync.Mutex
 	pending    map[string]*pendingLink
 	httpClient *http.Client
+	// allowedOrigins restricts which origins may start link flows — both the
+	// relay notify target and the browser redirect destination must match.
+	// Empty means "any public http(s) origin" (warned at startup).
+	allowedOrigins map[string]bool
 }
 
 func main() {
@@ -145,12 +149,27 @@ func main() {
 		log.Fatalf("loading accounts: %v", err)
 	}
 
+	allowed := map[string]bool{}
+	for _, o := range strings.Split(envOr("XPOST_ALLOWED_ORIGINS", ""), ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			u, err := url.Parse(o)
+			if err != nil || u.Host == "" {
+				log.Fatalf("bad XPOST_ALLOWED_ORIGINS entry: %q", o)
+			}
+			allowed[u.Scheme+"://"+u.Host] = true
+		}
+	}
+	if len(allowed) == 0 {
+		log.Println("WARNING: XPOST_ALLOWED_ORIGINS not set — link flows accept any public origin; set it to your relay + CMS origins")
+	}
+
 	s := &server{
-		oauth:      xclient.New(key, secret),
-		store:      store,
-		publicURL:  publicURL,
-		pending:    make(map[string]*pendingLink),
-		httpClient: &http.Client{Timeout: 15 * time.Second},
+		oauth:          xclient.New(key, secret),
+		store:          store,
+		publicURL:      publicURL,
+		pending:        make(map[string]*pendingLink),
+		httpClient:     &http.Client{Timeout: 15 * time.Second},
+		allowedOrigins: allowed,
 	}
 
 	mux := http.NewServeMux()
@@ -194,6 +213,22 @@ func isHTTPOrigin(s string) bool {
 	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
+// originAllowed reports whether raw may be used as a link-flow relay (notify
+// target) or return_to (browser redirect). With XPOST_ALLOWED_ORIGINS set it
+// must match a listed origin exactly; otherwise it must be a public http(s)
+// URL — which still blocks SSRF to internal hosts but leaves the redirect
+// destination unconstrained, so configure the allowlist in production.
+func (s *server) originAllowed(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	if len(s.allowedOrigins) > 0 {
+		return s.allowedOrigins[u.Scheme+"://"+u.Host]
+	}
+	return xclient.IsPublicHTTPURL(raw)
+}
+
 // POST /v1/link/start — called by a swarm relay to begin linking one of its
 // users. Body: {pubkey, relay, return_to, nonce}. Returns {authorize_url}.
 func (s *server) handleLinkStart(w http.ResponseWriter, r *http.Request) {
@@ -211,6 +246,10 @@ func (s *server) handleLinkStart(w http.ResponseWriter, r *http.Request) {
 		req.Pubkey == "" || req.Nonce == "" ||
 		!isHTTPOrigin(req.Relay) || !isHTTPOrigin(req.ReturnTo) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	if !s.originAllowed(req.Relay) || !s.originAllowed(req.ReturnTo) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "origin not allowed"})
 		return
 	}
 
@@ -316,6 +355,11 @@ func (s *server) handleLinkCallback(w http.ResponseWriter, r *http.Request) {
 		"twitter_user_id": userID,
 		"link_token":      linkToken,
 	})
+	if !xclient.IsPublicHTTPURL(pending.Relay) {
+		log.Printf("relay notify target blocked for %s: %s", pending.Pubkey, pending.Relay)
+		redirect("x_error=notify")
+		return
+	}
 	req, err := http.NewRequestWithContext(r.Context(), "POST", pending.Relay+"/api/x/linked", bytes.NewReader(notify))
 	if err == nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -367,7 +411,7 @@ func (s *server) handlePost(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "pubkey mismatch"})
 		return
 	}
-	if req.MediaURL != "" && !strings.HasPrefix(req.MediaURL, "http") {
+	if req.MediaURL != "" && !xclient.IsPublicHTTPURL(req.MediaURL) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid media_url"})
 		return
 	}

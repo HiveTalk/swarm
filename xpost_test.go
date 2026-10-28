@@ -52,6 +52,11 @@ func TestCleanNostrLinks(t *testing.T) {
 			expected: "my key [redacted] secret",
 		},
 		{
+			name:     "bare nsec is redacted too",
+			input:    "oops nsec1abcdef dropped",
+			expected: "oops [redacted] dropped",
+		},
+		{
 			name:     "not a nostr uri",
 			input:    "no-stir:npub1abc stays",
 			expected: "no-stir:npub1abc stays",

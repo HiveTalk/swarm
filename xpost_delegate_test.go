@@ -174,6 +174,9 @@ func TestDelegateAuthStart(t *testing.T) {
 
 	req := httptest.NewRequest("POST", url, strings.NewReader(`{"return_to":"https://cms.example.com"}`))
 	req.Host = "relay.example.com"
+	// The browser's Origin is the CMS host — the service must still notify the
+	// API host, not this origin (split CMS/API deployment).
+	req.Header.Set("Origin", "https://cms.example.com")
 	req.Header.Set("Authorization", auth)
 	rec := httptest.NewRecorder()
 	c.HandleAuthStart(rec, req)
@@ -200,7 +203,7 @@ func TestDelegateAuthStart(t *testing.T) {
 		t.Fatal("service received no nonce")
 	}
 	if gotBody["relay"] != "http://relay.example.com" {
-		t.Fatalf("service got wrong relay: %q", gotBody["relay"])
+		t.Fatalf("service got wrong relay (must be API host, not CMS Origin): %q", gotBody["relay"])
 	}
 	if gotBody["return_to"] != "https://cms.example.com" {
 		t.Fatalf("service got wrong return_to: %q", gotBody["return_to"])

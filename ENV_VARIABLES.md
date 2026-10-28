@@ -153,6 +153,7 @@ Run it (`go build ./cmd/xpost`) with:
 | `TWITTER_KEY` | X app OAuth 1.0a consumer key | required |
 | `TWITTER_KEY_SECRET` | X app OAuth 1.0a consumer secret | required |
 | `XPOST_PUBLIC_URL` | Externally reachable base URL, e.g. `https://xpost.example.com` | required |
+| `XPOST_ALLOWED_ORIGINS` | Comma-separated origins allowed to start link flows (relay API origins **and** CMS origins) | `""` = any public origin (warned) |
 | `PORT` | Listen port | `8090` |
 | `XPOST_DB_PATH` | Directory for `xpost_accounts.json` | `./xpost-data` |
 

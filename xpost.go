@@ -190,9 +190,10 @@ func (c *Crossposter) postLocal(ctx context.Context, acct *XAccount, p tweetPayl
 // o after the HRP separator (the '1' here is part of the HRP, e.g. "npub1").
 var nostrURIRe = regexp.MustCompile(`nostr:(npub1|nprofile1|note1|nevent1|naddr1)[023456789acdefghjklmnpqrstuvwxyz]+`)
 
-// nsec matches its whole token liberally — even a malformed one must be fully
-// consumed so no part of a private key leaks into a tweet.
-var nostrNsecRe = regexp.MustCompile(`nostr:nsec1[a-z0-9]+`)
+// nsec matches its whole token liberally, with or without the nostr: prefix —
+// even a malformed one must be fully consumed so no part of a private key
+// leaks into a tweet.
+var nostrNsecRe = regexp.MustCompile(`(?:nostr:)?nsec1[a-z0-9]+`)
 
 // http(s) URLs each count as t.co length on X regardless of actual length.
 var httpURLRe = regexp.MustCompile(`https?://[^\s]+`)
@@ -505,9 +506,12 @@ func requestOrigin(r *http.Request, explicit string) string {
 	return scheme + "://" + host
 }
 
-// callbackURL derives the X oauth_callback for this deployment from the
-// inbound request (respects X-Forwarded-* for proxied setups).
-func (c *Crossposter) callbackURL(r *http.Request) string {
+// apiOrigin returns the externally visible origin of this API host
+// (scheme://host, honoring X-Forwarded-*) — used for server-to-server URLs
+// like oauth callbacks and delegate notify targets. Unlike requestOrigin it
+// never consults the browser's Origin header: the service must call back to
+// the API host, not the CMS origin that started the request.
+func apiOrigin(r *http.Request) string {
 	scheme := "https"
 	if r.TLS == nil {
 		scheme = "http"
@@ -519,7 +523,13 @@ func (c *Crossposter) callbackURL(r *http.Request) string {
 	if h := r.Header.Get("X-Forwarded-Host"); h != "" {
 		host = h
 	}
-	return scheme + "://" + host + "/api/x/auth/callback"
+	return scheme + "://" + host
+}
+
+// callbackURL derives the X oauth_callback for this deployment from the
+// inbound request (respects X-Forwarded-* for proxied setups).
+func (c *Crossposter) callbackURL(r *http.Request) string {
+	return apiOrigin(r) + "/api/x/auth/callback"
 }
 
 // HandleStatus: GET /api/x/status — NIP-98 authed, per-user.
@@ -649,7 +659,7 @@ func (c *Crossposter) handleAuthStartDelegate(w http.ResponseWriter, r *http.Req
 
 	payload, _ := json.Marshal(map[string]string{
 		"pubkey":    pubkey,
-		"relay":     requestOrigin(r, ""),
+		"relay":     apiOrigin(r),
 		"return_to": requestOrigin(r, returnTo),
 		"nonce":     nonce,
 	})

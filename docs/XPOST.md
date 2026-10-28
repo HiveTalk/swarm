@@ -48,6 +48,7 @@ go build -o xpost ./cmd/xpost
 TWITTER_KEY=... \
 TWITTER_KEY_SECRET=... \
 XPOST_PUBLIC_URL=https://xpost.yourdomain.com \
+XPOST_ALLOWED_ORIGINS=https://relay.yourdomain.com,https://cms.yourdomain.com \
 PORT=8090 \
 XPOST_DB_PATH=/var/lib/xpost \
 ./xpost
@@ -94,12 +95,17 @@ Disconnect or pause any time from the same tab.
   generates at connect time (the service can't forge or replay a link for an
   arbitrary pubkey) plus a per-user **link token** the service issues at the
   end of the flow; all `/v1/post` calls carry it as a Bearer token.
+- **`XPOST_ALLOWED_ORIGINS`** lists every origin allowed to start link flows
+  — relay API origins (e.g. `https://swarm.hivetalk.org`) *and* CMS origins
+  (the admin panel's public URL). This stops `/v1/link/start` being abused to
+  make the service POST tokens to internal hosts or redirect users to
+  phishing sites. Set it in production; without it the service warns at
+  startup and accepts any *public* origin.
+- Server-side fetches (relay notify, video downloads) additionally refuse
+  loopback/private/link-local addresses.
 - Service-side account data lives in `<XPOST_DB_PATH>/xpost_accounts.json`
   (mode 0600). Treat it like any credential store — back it up, restrict it.
-- Anyone who can reach `/v1/link/start` can start *an* OAuth flow, but the
-  relay only accepts link completions for nonces it generated — a drive-by
-  link can't attach to a user who didn't start it. Still, front the service
-  with your normal rate limiting.
+- Front the service with your normal rate limiting.
 
 ## Troubleshooting
 

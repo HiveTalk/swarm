@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -127,14 +128,6 @@ func nonce() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
-}
-
-func mustJSON(v interface{}) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-	return string(b)
 }
 
 // Client performs the 3-legged OAuth 1.0a flow and signs API calls with
@@ -267,11 +260,15 @@ func (c *Client) PostTweetWithMedia(ctx context.Context, accessToken, accessSecr
 		return "", err
 	}
 
-	body := fmt.Sprintf(`{"text":%s}`, mustJSON(text))
+	tweet := map[string]interface{}{"text": text}
 	if len(mediaIDs) > 0 {
-		body = fmt.Sprintf(`{"text":%s,"media":{"media_ids":%s}}`, mustJSON(text), mustJSON(mediaIDs))
+		tweet["media"] = map[string][]string{"media_ids": mediaIDs}
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", CreateTweetURL, strings.NewReader(body))
+	bodyBytes, err := json.Marshal(tweet)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", CreateTweetURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return "", err
 	}
@@ -337,10 +334,43 @@ func (c *Client) signedUpload(ctx context.Context, method string, query url.Valu
 	return respBody, nil
 }
 
+// IsPublicHTTPURL reports whether raw is an http(s) URL whose host does not
+// resolve to a loopback, private, link-local, or unspecified address. Used to
+// blunt SSRF before server-side fetches of caller-supplied URLs (media
+// downloads, delegate notify targets).
+func IsPublicHTTPURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return false
+	}
+	host := u.Hostname()
+	if ip := net.ParseIP(host); ip != nil {
+		return isPublicIP(ip)
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil || len(ips) == 0 {
+		return false
+	}
+	for _, ip := range ips {
+		if !isPublicIP(ip) {
+			return false
+		}
+	}
+	return true
+}
+
+func isPublicIP(ip net.IP) bool {
+	return !(ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsUnspecified())
+}
+
 // UploadMedia downloads mediaURL (video) and uploads it to X via the chunked
 // INIT → APPEND → FINALIZE → STATUS flow, returning the media_id for use in
 // PostTweetWithMedia. Caller should fall back to a plain-text post on error.
 func (c *Client) UploadMedia(ctx context.Context, accessToken, accessSecret, mediaURL string) (mediaID string, err error) {
+	if !IsPublicHTTPURL(mediaURL) {
+		return "", fmt.Errorf("media URL must be a public http(s) URL")
+	}
 	// Download the source media (cap enforced via LimitReader+1).
 	getReq, err := http.NewRequestWithContext(ctx, "GET", mediaURL, nil)
 	if err != nil {
