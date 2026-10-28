@@ -436,8 +436,9 @@ func (c *Client) UploadMedia(ctx context.Context, accessToken, accessSecret, med
 		return "", err
 	}
 	dlClient := PublicHTTPClient(3 * time.Minute)
-	// codeql[go/request-forgery] mediaURL is restricted to public http(s)
-	// targets by IsPublicHTTPURL and the client's pinned-IP dialer.
+	// mediaURL is validated: http(s) only, public IPs only, and the dialer
+	// pins each connection to the validated IP including redirect hops.
+	// codeql[go/request-forgery]
 	dlResp, err := dlClient.Do(getReq)
 	if err != nil {
 		return "", fmt.Errorf("downloading media: %w", err)
