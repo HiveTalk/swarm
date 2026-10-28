@@ -64,6 +64,11 @@ type Config struct {
 	S3Bucket       string
 	S3Region       string
 	S3PublicURL    string
+	// X/Twitter crossposting (app-level OAuth 1.0a consumer credentials)
+	TwitterKey       string
+	TwitterKeySecret string
+	// Delegate mode: shared xpost service base URL (alternative to local creds)
+	XPostServiceURL string
 }
 
 // resolveDashboardAdminPubkey picks the operator key for dashboard auth.
@@ -388,6 +393,30 @@ func main() {
 		relay.Router().HandleFunc("/api/scheduler/schedule", scheduler.HandleSchedule)
 		relay.Router().HandleFunc("/api/scheduler/list", scheduler.HandleList)
 		relay.Router().HandleFunc("/api/scheduler/delete", scheduler.HandleDelete)
+	}
+
+	// X/Twitter crossposting — linked accounts post kind-1 notes to X. Hooked
+	// into OnEventSaved so it covers both websocket publishes and scheduler
+	// publishes (relay.AddEvent fires OnEventSaved after storing).
+	xAccounts, err := NewXAccountStore(schedulerDataPath)
+	if err != nil {
+		log.Printf("Failed to initialize X account store: %v", err)
+	} else {
+		relayWS := ""
+		if config.WebSocketURL != nil {
+			relayWS = *config.WebSocketURL
+		}
+		crossposter := NewCrossposter(xAccounts, config.TwitterKey, config.TwitterKeySecret, config.XPostServiceURL, relayWS, db.QueryEvents)
+		relay.OnEventSaved = append(relay.OnEventSaved, crossposter.OnEventSaved)
+		relay.Router().HandleFunc("/api/x/status", crossposter.HandleStatus)
+		relay.Router().HandleFunc("/api/x/auth/start", crossposter.HandleAuthStart)
+		relay.Router().HandleFunc("/api/x/auth/callback", crossposter.HandleAuthCallback)
+		relay.Router().HandleFunc("/api/x/linked", crossposter.HandleLinked)
+		relay.Router().HandleFunc("/api/x/disconnect", crossposter.HandleDisconnect)
+		relay.Router().HandleFunc("/api/x/toggle", crossposter.HandleToggle)
+		if !crossposter.configured() {
+			log.Println("X crossposting available but dormant: set TWITTER_KEY/TWITTER_KEY_SECRET or XPOST_SERVICE_URL")
+		}
 	}
 
 	registerHealthHandlers(relay, config)
@@ -911,6 +940,10 @@ func LoadConfig() Config {
 		S3Bucket:       getEnvWithDefault("S3_BUCKET", ""),
 		S3Region:       getEnvWithDefault("S3_REGION", "auto"),
 		S3PublicURL:    getEnvWithDefault("S3_PUBLIC_URL", ""),
+		// X/Twitter crossposting
+		TwitterKey:       getEnvWithDefault("TWITTER_KEY", ""),
+		TwitterKeySecret: getEnvWithDefault("TWITTER_KEY_SECRET", ""),
+		XPostServiceURL:  getEnvWithDefault("XPOST_SERVICE_URL", ""),
 	}
 
 	relay.Info.Name = config.RelayName

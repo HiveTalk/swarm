@@ -116,6 +116,68 @@ If a rate-limit variable is unset, empty, invalid, or non-positive, that specifi
 | `TRUSTED_CLIENT_NAME` | Client tag name to trust | `""` |
 | `TRUSTED_CLIENT_KINDS` | Comma-separated kinds allowed for trusted client, or `"*"` for all | `""` |
 
+## X/Twitter Crossposting (Optional)
+
+When configured, team members can link their X account from the CMS admin
+panel (Crossposting tab) and have their kind-1 notes automatically posted to
+X — both notes published live and notes published by the scheduler. Replies
+(any `e` tag) and non-kind-1 events are never crossposted.
+
+Post formatting: `nostr:npub`/`nprofile` mentions render as the profile's
+display name (resolved from the relay's kind-0 store, falling back to team
+names, then a short npub); other `nostr:` URIs become `nostr.at` links and a
+`nostr.at/nevent…` footer links back to the source note. `.mp4`/`.mov` video
+links are uploaded as native X media attachments (fallback: plain link).
+
+Two modes, pick one:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `XPOST_SERVICE_URL` | Base URL of a shared `xpost` service (delegate mode — recommended) | `""` |
+| `TWITTER_KEY` | X app OAuth 1.0a consumer key (local mode) | `""` (feature dormant) |
+| `TWITTER_KEY_SECRET` | X app OAuth 1.0a consumer secret (local mode) | `""` |
+
+If `XPOST_SERVICE_URL` is set it takes precedence; `TWITTER_KEY*` are then
+only used as a fallback for accounts already linked in local mode.
+
+### Delegate mode (recommended): the shared `xpost` service
+
+One `xpost` deployment holds a single X developer app and serves any number of
+relays — relay operators do **not** need their own X credentials. See
+`docs/XPOST.md` for the full setup walkthrough.
+
+Run it (`go build ./cmd/xpost`) with:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `TWITTER_KEY` | X app OAuth 1.0a consumer key | required |
+| `TWITTER_KEY_SECRET` | X app OAuth 1.0a consumer secret | required |
+| `XPOST_PUBLIC_URL` | Externally reachable base URL, e.g. `https://xpost.example.com` | required |
+| `XPOST_ALLOWED_ORIGINS` | Comma-separated origins allowed to start link flows (relay API origins **and** CMS origins) | `""` = any public origin (warned) |
+| `PORT` | Listen port | `8090` |
+| `XPOST_DB_PATH` | Directory for `xpost_accounts.json` | `./xpost-data` |
+
+Register `https://<xpost-host>/v1/link/callback` as the X app's Callback URI,
+then set `XPOST_SERVICE_URL=https://<xpost-host>` on each relay.
+
+### Local mode
+
+**X developer app setup:**
+1. Create an app in the [X developer portal](https://developer.x.com/) — it must
+   be part of a project, not standalone.
+2. App permissions: **Read and write**.
+3. App type: **Web App, Automated App or Bot**.
+4. Callback URI: `https://<your-relay-host>/api/x/auth/callback` (must match
+   the host the CMS calls the API on — usually your site domain).
+5. Copy the app's **API Key and Secret** into `TWITTER_KEY` /
+   `TWITTER_KEY_SECRET`.
+
+The callback host is derived per-request (with `X-Forwarded-*` support), so no
+extra config is needed for unified deployments; split setups just register the
+API host's callback URL. Linked account tokens are stored in
+`<DB_PATH>/x_accounts.json`. X's free API tier is limited (~500 posts/month) —
+check current limits for your tier.
+
 ---
 
 ## Example Configurations
