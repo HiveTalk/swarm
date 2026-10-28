@@ -364,6 +364,63 @@ func isPublicIP(ip net.IP) bool {
 		ip.IsLinkLocalMulticast() || ip.IsUnspecified())
 }
 
+// resolvePublicIP resolves host and returns a confirmed public IP, or an
+// error when the host is a literal private address or resolves to only
+// non-public addresses.
+func resolvePublicIP(host string) (net.IP, error) {
+	if ip := net.ParseIP(host); ip != nil {
+		if !isPublicIP(ip) {
+			return nil, fmt.Errorf("host %s is not a public address", host)
+		}
+		return ip, nil
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil || len(ips) == 0 {
+		return nil, fmt.Errorf("cannot resolve %s", host)
+	}
+	for _, ip := range ips {
+		if isPublicIP(ip) {
+			return ip, nil
+		}
+	}
+	return nil, fmt.Errorf("%s resolves to non-public addresses only", host)
+}
+
+// PublicHTTPClient returns an *http.Client hardened against SSRF for fetches
+// of caller-influenced URLs. The dialer resolves, validates, and pins a
+// public IP per connection — the IP dialed is exactly the IP validated, so
+// DNS-rebinding between check and connect can't slip in a private address —
+// and every redirect hop dials through the same guard, blocking hops to
+// internal or non-http(s) targets. Redirects are capped at 5.
+func PublicHTTPClient(timeout time.Duration) *http.Client {
+	dialer := &net.Dialer{Timeout: 30 * time.Second}
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				host, port, err := net.SplitHostPort(addr)
+				if err != nil {
+					return nil, err
+				}
+				ip, err := resolvePublicIP(host)
+				if err != nil {
+					return nil, fmt.Errorf("SSRF guard: %w", err)
+				}
+				return dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+			},
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return fmt.Errorf("too many redirects")
+			}
+			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+				return fmt.Errorf("redirect to non-http(s) scheme blocked")
+			}
+			return nil
+		},
+	}
+}
+
 // UploadMedia downloads mediaURL (video) and uploads it to X via the chunked
 // INIT → APPEND → FINALIZE → STATUS flow, returning the media_id for use in
 // PostTweetWithMedia. Caller should fall back to a plain-text post on error.
@@ -371,12 +428,16 @@ func (c *Client) UploadMedia(ctx context.Context, accessToken, accessSecret, med
 	if !IsPublicHTTPURL(mediaURL) {
 		return "", fmt.Errorf("media URL must be a public http(s) URL")
 	}
-	// Download the source media (cap enforced via LimitReader+1).
+	// Download the source media (cap enforced via LimitReader+1). The client
+	// re-validates and pins the resolved IP on every connection — including
+	// redirect hops — so internal hosts are unreachable.
 	getReq, err := http.NewRequestWithContext(ctx, "GET", mediaURL, nil)
 	if err != nil {
 		return "", err
 	}
-	dlClient := &http.Client{Timeout: 3 * time.Minute}
+	dlClient := PublicHTTPClient(3 * time.Minute)
+	// codeql[go/request-forgery] mediaURL is restricted to public http(s)
+	// targets by IsPublicHTTPURL and the client's pinned-IP dialer.
 	dlResp, err := dlClient.Do(getReq)
 	if err != nil {
 		return "", fmt.Errorf("downloading media: %w", err)

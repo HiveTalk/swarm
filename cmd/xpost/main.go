@@ -168,7 +168,7 @@ func main() {
 		store:          store,
 		publicURL:      publicURL,
 		pending:        make(map[string]*pendingLink),
-		httpClient:     &http.Client{Timeout: 15 * time.Second},
+		httpClient:     xclient.PublicHTTPClient(15 * time.Second),
 		allowedOrigins: allowed,
 	}
 
