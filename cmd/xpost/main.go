@@ -168,7 +168,7 @@ func main() {
 		store:          store,
 		publicURL:      publicURL,
 		pending:        make(map[string]*pendingLink),
-		httpClient:     xclient.PublicHTTPClient(15 * time.Second),
+		httpClient:     newNotifyClient(),
 		allowedOrigins: allowed,
 	}
 
@@ -185,6 +185,15 @@ func main() {
 	addr := ":" + envOr("PORT", "8090")
 	log.Printf("xpost service listening on %s (public: %s)", addr, publicURL)
 	log.Fatal(http.ListenAndServe(addr, mux))
+}
+
+func newNotifyClient() *http.Client {
+	client := xclient.PublicHTTPClient(15 * time.Second)
+	// A 307/308 would forward the link token in the POST body to another host.
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return client
 }
 
 func envOr(key, def string) string {

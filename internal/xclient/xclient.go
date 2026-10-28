@@ -19,6 +19,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"sort"
 	"strings"
@@ -334,56 +335,88 @@ func (c *Client) signedUpload(ctx context.Context, method string, query url.Valu
 	return respBody, nil
 }
 
-// IsPublicHTTPURL reports whether raw is an http(s) URL whose host does not
-// resolve to a loopback, private, link-local, or unspecified address. Used to
-// blunt SSRF before server-side fetches of caller-supplied URLs (media
-// downloads, delegate notify targets).
+// IsPublicHTTPURL reports whether raw is an http(s) URL whose host resolves
+// only to public addresses. A connection must still use PublicHTTPClient so
+// the address validated at dial time is the one actually connected to.
 func IsPublicHTTPURL(raw string) bool {
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return false
 	}
-	host := u.Hostname()
-	if ip := net.ParseIP(host); ip != nil {
-		return isPublicIP(ip)
-	}
-	ips, err := net.LookupIP(host)
-	if err != nil || len(ips) == 0 {
+	_, err = resolvePublicIP(context.Background(), u.Hostname(), lookupIPs)
+	return err == nil
+}
+
+var publicIPv6Range = netip.MustParsePrefix("2000::/3")
+
+var nonPublicRanges = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("64:ff9b::/96"),
+	netip.MustParsePrefix("64:ff9b:1::/48"),
+	netip.MustParsePrefix("2001::/32"),
+	netip.MustParsePrefix("2001:2::/48"),
+	netip.MustParsePrefix("2001:10::/28"),
+	netip.MustParsePrefix("2001:20::/28"),
+	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("2002::/16"),
+}
+
+func isPublicIP(ip net.IP) bool {
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
 		return false
 	}
-	for _, ip := range ips {
-		if !isPublicIP(ip) {
+	addr = addr.Unmap()
+	if !addr.IsGlobalUnicast() || addr.IsPrivate() ||
+		(addr.Is6() && !publicIPv6Range.Contains(addr)) {
+		return false
+	}
+	for _, block := range nonPublicRanges {
+		if block.Contains(addr) {
 			return false
 		}
 	}
 	return true
 }
 
-func isPublicIP(ip net.IP) bool {
-	return !(ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() || ip.IsUnspecified())
+func lookupIPs(ctx context.Context, host string) ([]net.IP, error) {
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	ips := make([]net.IP, 0, len(addrs))
+	for _, addr := range addrs {
+		ips = append(ips, addr.IP)
+	}
+	return ips, nil
 }
 
-// resolvePublicIP resolves host and returns a confirmed public IP, or an
-// error when the host is a literal private address or resolves to only
-// non-public addresses.
-func resolvePublicIP(host string) (net.IP, error) {
+// resolvePublicIP rejects the entire DNS answer if even one address is
+// non-public; the caller must dial the returned IP rather than the hostname.
+func resolvePublicIP(ctx context.Context, host string, lookup func(context.Context, string) ([]net.IP, error)) (net.IP, error) {
 	if ip := net.ParseIP(host); ip != nil {
 		if !isPublicIP(ip) {
 			return nil, fmt.Errorf("host %s is not a public address", host)
 		}
 		return ip, nil
 	}
-	ips, err := net.LookupIP(host)
+	ips, err := lookup(ctx, host)
 	if err != nil || len(ips) == 0 {
 		return nil, fmt.Errorf("cannot resolve %s", host)
 	}
 	for _, ip := range ips {
-		if isPublicIP(ip) {
-			return ip, nil
+		if !isPublicIP(ip) {
+			return nil, fmt.Errorf("%s resolves to a non-public address", host)
 		}
 	}
-	return nil, fmt.Errorf("%s resolves to non-public addresses only", host)
+	return ips[0], nil
 }
 
 // PublicHTTPClient returns an *http.Client hardened against SSRF for fetches
@@ -394,6 +427,10 @@ func resolvePublicIP(host string) (net.IP, error) {
 // internal or non-http(s) targets. Redirects are capped at 5.
 func PublicHTTPClient(timeout time.Duration) *http.Client {
 	dialer := &net.Dialer{Timeout: 30 * time.Second}
+	return publicHTTPClient(timeout, lookupIPs, dialer.DialContext)
+}
+
+func publicHTTPClient(timeout time.Duration, lookup func(context.Context, string) ([]net.IP, error), dial func(context.Context, string, string) (net.Conn, error)) *http.Client {
 	return &http.Client{
 		Timeout: timeout,
 		Transport: &http.Transport{
@@ -402,11 +439,11 @@ func PublicHTTPClient(timeout time.Duration) *http.Client {
 				if err != nil {
 					return nil, err
 				}
-				ip, err := resolvePublicIP(host)
+				ip, err := resolvePublicIP(ctx, host, lookup)
 				if err != nil {
 					return nil, fmt.Errorf("SSRF guard: %w", err)
 				}
-				return dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+				return dial(ctx, network, net.JoinHostPort(ip.String(), port))
 			},
 		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -436,9 +473,6 @@ func (c *Client) UploadMedia(ctx context.Context, accessToken, accessSecret, med
 		return "", err
 	}
 	dlClient := PublicHTTPClient(3 * time.Minute)
-	// mediaURL is validated: http(s) only, public IPs only, and the dialer
-	// pins each connection to the validated IP including redirect hops.
-	// codeql[go/request-forgery]
 	dlResp, err := dlClient.Do(getReq)
 	if err != nil {
 		return "", fmt.Errorf("downloading media: %w", err)
