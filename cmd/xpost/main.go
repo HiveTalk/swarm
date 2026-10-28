@@ -338,7 +338,10 @@ func (s *server) handleLinkCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /v1/post — relay submits cleaned tweet text for a linked account.
-// Auth: Bearer <link_token>. Body: {pubkey, event_id, text}. Returns {tweet_id}.
+// Auth: Bearer <link_token>. Body: {pubkey, event_id, text, text_media?,
+// media_url?}. When media_url is a video the service uploads it as an X media
+// attachment and posts text_media; on failure it posts text with the URL in.
+// Returns {tweet_id}.
 func (s *server) handlePost(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -350,9 +353,11 @@ func (s *server) handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Pubkey  string `json:"pubkey"`
-		EventID string `json:"event_id"`
-		Text    string `json:"text"`
+		Pubkey    string `json:"pubkey"`
+		EventID   string `json:"event_id"`
+		Text      string `json:"text"`
+		TextMedia string `json:"text_media"`
+		MediaURL  string `json:"media_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -362,8 +367,26 @@ func (s *server) handlePost(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "pubkey mismatch"})
 		return
 	}
+	if req.MediaURL != "" && !strings.HasPrefix(req.MediaURL, "http") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid media_url"})
+		return
+	}
 
-	tweetID, err := s.oauth.PostTweet(r.Context(), acct.AccessToken, acct.AccessSecret, req.Text)
+	text := req.Text
+	var mediaIDs []string
+	if req.MediaURL != "" {
+		mediaID, err := s.oauth.UploadMedia(r.Context(), acct.AccessToken, acct.AccessSecret, req.MediaURL)
+		if err != nil {
+			log.Printf("media upload failed for %s (@%s), posting text only: %v", acct.Pubkey, acct.ScreenName, err)
+		} else {
+			mediaIDs = []string{mediaID}
+			if req.TextMedia != "" {
+				text = req.TextMedia
+			}
+		}
+	}
+
+	tweetID, err := s.oauth.PostTweetWithMedia(r.Context(), acct.AccessToken, acct.AccessSecret, text, mediaIDs)
 	if err != nil {
 		log.Printf("tweet failed for %s (@%s): %v", acct.Pubkey, acct.ScreenName, err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})

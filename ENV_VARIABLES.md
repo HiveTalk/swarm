@@ -123,6 +123,12 @@ panel (Crossposting tab) and have their kind-1 notes automatically posted to
 X — both notes published live and notes published by the scheduler. Replies
 (any `e` tag) and non-kind-1 events are never crossposted.
 
+Post formatting: `nostr:npub`/`nprofile` mentions render as the profile's
+display name (resolved from the relay's kind-0 store, falling back to team
+names, then a short npub); other `nostr:` URIs become `nostr.at` links and a
+`nostr.at/nevent…` footer links back to the source note. `.mp4`/`.mov` video
+links are uploaded as native X media attachments (fallback: plain link).
+
 Two modes, pick one:
 
 | Variable | Description | Default |

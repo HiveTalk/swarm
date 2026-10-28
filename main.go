@@ -406,7 +406,7 @@ func main() {
 		if config.WebSocketURL != nil {
 			relayWS = *config.WebSocketURL
 		}
-		crossposter := NewCrossposter(xAccounts, config.TwitterKey, config.TwitterKeySecret, config.XPostServiceURL, relayWS)
+		crossposter := NewCrossposter(xAccounts, config.TwitterKey, config.TwitterKeySecret, config.XPostServiceURL, relayWS, db.QueryEvents)
 		relay.OnEventSaved = append(relay.OnEventSaved, crossposter.OnEventSaved)
 		relay.Router().HandleFunc("/api/x/status", crossposter.HandleStatus)
 		relay.Router().HandleFunc("/api/x/auth/start", crossposter.HandleAuthStart)

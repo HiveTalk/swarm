@@ -54,7 +54,7 @@ func nip98Auth(t *testing.T, method, fullURL string) (header, pubkey string) {
 }
 
 func TestDelegateModeConfig(t *testing.T) {
-	c := NewCrossposter(testStore(t), "", "", "https://xpost.example.com/", "wss://relay.example.com")
+	c := NewCrossposter(testStore(t), "", "", "https://xpost.example.com/", "wss://relay.example.com", nil)
 	if !c.configured() {
 		t.Fatal("crossposter with service URL should be configured")
 	}
@@ -65,12 +65,12 @@ func TestDelegateModeConfig(t *testing.T) {
 		t.Fatalf("service URL should have trailing slash trimmed, got %q", c.serviceURL)
 	}
 
-	local := NewCrossposter(testStore(t), "k", "s", "", "")
+	local := NewCrossposter(testStore(t), "k", "s", "", "", nil)
 	if !local.configured() || local.delegateMode() {
 		t.Fatal("local credentials should give configured non-delegate mode")
 	}
 
-	none := NewCrossposter(testStore(t), "", "", "", "")
+	none := NewCrossposter(testStore(t), "", "", "", "", nil)
 	if none.configured() {
 		t.Fatal("no config should mean unconfigured")
 	}
@@ -78,7 +78,7 @@ func TestDelegateModeConfig(t *testing.T) {
 
 func TestHandleLinkedNonceBinding(t *testing.T) {
 	store := testStore(t)
-	c := NewCrossposter(store, "", "", "https://xpost.example.com", "")
+	c := NewCrossposter(store, "", "", "https://xpost.example.com", "", nil)
 
 	pubkey := "00000000000000000000000000000000000000000000000000000000000000aa"
 	c.linkPending["nonce-good"] = &xLinkPending{Pubkey: pubkey, ExpiresAt: time.Now().Add(time.Minute)}
@@ -137,7 +137,7 @@ func TestHandleLinkedNonceBinding(t *testing.T) {
 	}
 
 	// Local-mode crossposter rejects the endpoint entirely.
-	local := NewCrossposter(testStore(t), "k", "s", "", "")
+	local := NewCrossposter(testStore(t), "k", "s", "", "", nil)
 	req := httptest.NewRequest("POST", "/api/x/linked", strings.NewReader(`{"nonce":"x","link_token":"t"}`))
 	rec = httptest.NewRecorder()
 	local.HandleLinked(rec, req)
@@ -167,7 +167,7 @@ func TestDelegateAuthStart(t *testing.T) {
 	}))
 	defer svc.Close()
 
-	c := NewCrossposter(testStore(t), "", "", svc.URL, "")
+	c := NewCrossposter(testStore(t), "", "", svc.URL, "", nil)
 
 	url := "http://relay.example.com/api/x/auth/start"
 	auth, pk := nip98Auth(t, "POST", url)
@@ -248,7 +248,7 @@ func TestCrosspostDelegatesToService(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c := NewCrossposter(store, "", "", svc.URL, "wss://relay.example.com")
+	c := NewCrossposter(store, "", "", svc.URL, "wss://relay.example.com", nil)
 
 	event := &nostr.Event{
 		ID:        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -301,7 +301,7 @@ func TestCrosspostDelegateErrorRecorded(t *testing.T) {
 		LinkedAt:   time.Now().Add(-time.Hour),
 	})
 
-	c := NewCrossposter(store, "", "", svc.URL, "")
+	c := NewCrossposter(store, "", "", svc.URL, "", nil)
 	c.crosspost(&nostr.Event{
 		ID:        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		PubKey:    pubkey,
@@ -332,10 +332,10 @@ func TestPostViaServiceRejectsBadToken(t *testing.T) {
 	defer svc.Close()
 
 	// Bad token → error propagates up to the caller.
-	if _, err := xclient.PostViaService(context.Background(), svc.URL, "bad", "pk", "ev", "hi"); err == nil {
+	if _, err := xclient.PostViaService(context.Background(), svc.URL, "bad", "pk", "ev", "hi", "", ""); err == nil {
 		t.Fatal("expected error for bad token")
 	}
-	if id, err := xclient.PostViaService(context.Background(), svc.URL, "good", "pk", "ev", "hi"); err != nil || id != "ok-1" {
+	if id, err := xclient.PostViaService(context.Background(), svc.URL, "good", "pk", "ev", "hi", "", ""); err != nil || id != "ok-1" {
 		t.Fatalf("good token should post: id=%q err=%v", id, err)
 	}
 }

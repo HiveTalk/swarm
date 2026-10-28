@@ -43,6 +43,9 @@ type Crossposter struct {
 	serviceURL string // delegate service base URL, "" when in local mode
 	enabled    bool   // false when neither mode is configured
 	relayURL   string // e.g. "wss://example.com" — included as nevent relay hint
+	// queryFn queries the relay's event store (db.QueryEvents); used to
+	// resolve mentioned pubkeys to profile names. nil disables lookups.
+	queryFn func(ctx context.Context, filter nostr.Filter) (chan *nostr.Event, error)
 
 	pendingMu sync.Mutex
 	pending   map[string]*xPendingAuth // oauth request token → pending link (local mode)
@@ -66,7 +69,7 @@ type xLinkPending struct {
 	ExpiresAt time.Time
 }
 
-func NewCrossposter(store *XAccountStore, consumerKey, consumerSecret, serviceURL, relayWSURL string) *Crossposter {
+func NewCrossposter(store *XAccountStore, consumerKey, consumerSecret, serviceURL, relayWSURL string, queryFn func(ctx context.Context, filter nostr.Filter) (chan *nostr.Event, error)) *Crossposter {
 	serviceURL = strings.TrimRight(serviceURL, "/")
 	return &Crossposter{
 		store:       store,
@@ -74,6 +77,7 @@ func NewCrossposter(store *XAccountStore, consumerKey, consumerSecret, serviceUR
 		serviceURL:  serviceURL,
 		enabled:     (consumerKey != "" && consumerSecret != "") || serviceURL != "",
 		relayURL:    relayWSURL,
+		queryFn:     queryFn,
 		pending:     make(map[string]*xPendingAuth),
 		linkPending: make(map[string]*xLinkPending),
 	}
@@ -117,7 +121,9 @@ func (c *Crossposter) OnEventSaved(ctx context.Context, event *nostr.Event) {
 }
 
 func (c *Crossposter) crosspost(event *nostr.Event) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Generous window: media download + chunked upload + transcode polling
+	// can take a couple of minutes; text-only posts return quickly.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	acct := c.store.Get(event.PubKey)
@@ -125,14 +131,14 @@ func (c *Crossposter) crosspost(event *nostr.Event) {
 		return
 	}
 
-	text := buildTweetText(event, c.relayURL)
+	payload := c.buildTweetPayload(event)
 
 	var tweetID string
 	var err error
 	if acct.Mode == "delegate" {
-		tweetID, err = xclient.PostViaService(ctx, c.serviceURL, acct.LinkToken, acct.UserPubkey, event.ID, text)
+		tweetID, err = xclient.PostViaService(ctx, c.serviceURL, acct.LinkToken, acct.UserPubkey, event.ID, payload.text, payload.textMedia, payload.mediaURL)
 	} else {
-		tweetID, err = c.oauth.PostTweet(ctx, acct.AccessToken, acct.AccessSecret, text)
+		tweetID, err = c.postLocal(ctx, acct, payload)
 	}
 
 	now := time.Now()
@@ -158,6 +164,24 @@ func (c *Crossposter) crosspost(event *nostr.Event) {
 	})
 }
 
+// postLocal posts directly through this relay's X app credentials. When the
+// note links a video it is uploaded as a real X media attachment; any upload
+// failure falls back to a text post with the URL left in.
+func (c *Crossposter) postLocal(ctx context.Context, acct *XAccount, p tweetPayload) (string, error) {
+	if p.mediaURL != "" && p.textMedia != "" {
+		mediaID, err := c.oauth.UploadMedia(ctx, acct.AccessToken, acct.AccessSecret, p.mediaURL)
+		if err == nil {
+			return c.oauth.PostTweetWithMedia(ctx, acct.AccessToken, acct.AccessSecret, p.textMedia, []string{mediaID})
+		}
+		logWithFields("warn", "X media upload failed; posting text only", map[string]interface{}{
+			"pubkey": acct.UserPubkey,
+			"media":  p.mediaURL,
+			"error":  err.Error(),
+		})
+	}
+	return c.oauth.PostTweet(ctx, acct.AccessToken, acct.AccessSecret, p.text)
+}
+
 // ---------------------------------------------------------------------------
 // Tweet text
 // ---------------------------------------------------------------------------
@@ -173,19 +197,99 @@ var nostrNsecRe = regexp.MustCompile(`nostr:nsec1[a-z0-9]+`)
 // http(s) URLs each count as t.co length on X regardless of actual length.
 var httpURLRe = regexp.MustCompile(`https?://[^\s]+`)
 
+// videoURLRe matches direct video file links X can ingest as media
+// attachments (mp4/m4v/mov — h264+aac containers).
+var videoURLRe = regexp.MustCompile(`https?://[^\s"']+\.(?:mp4|m4v|mov)(?:\?[^\s"']*)?`)
+
 const (
 	xMaxWeightedLen = 280
 	xURLLen         = 23 // t.co wrapped length
 )
 
-// cleanNostrLinks turns nostr:npub1… / nostr:note1… etc. references into
-// readable https://nostr.at/<bech32> links. nsec tokens are redacted — a note
-// that somehow contains a private key must not have it amplified to X.
+// cleanNostrLinks redacts nsec tokens. Callers then handle each remaining
+// nostr: URI via the replace func (mention names or nostr.at links).
 func cleanNostrLinks(content string) string {
-	content = nostrNsecRe.ReplaceAllString(content, "[redacted]")
+	return nostrNsecRe.ReplaceAllString(content, "[redacted]")
+}
+
+// cleanForX turns a note's content into X-friendly text:
+//   - nostr:npub/nprofile mentions become the profile's display name
+//     (resolved via the relay store, then team names, then a short npub)
+//   - other nostr: URIs (note/nevent/naddr) become nostr.at links
+//   - nsec is redacted entirely
+func (c *Crossposter) cleanForX(content string) string {
+	content = cleanNostrLinks(content)
 	return nostrURIRe.ReplaceAllStringFunc(content, func(m string) string {
-		return "https://nostr.at/" + strings.TrimPrefix(m, "nostr:")
+		bech := strings.TrimPrefix(m, "nostr:")
+		if strings.HasPrefix(bech, "npub1") || strings.HasPrefix(bech, "nprofile1") {
+			if name := c.mentionName(bech); name != "" {
+				return name
+			}
+		}
+		return "https://nostr.at/" + bech
 	})
+}
+
+// mentionName resolves an npub/nprofile bech32 to a human-readable name.
+// Returns "" when the bech32 itself is invalid (caller keeps the URL form).
+func (c *Crossposter) mentionName(bech string) string {
+	pubkey := ""
+	prefix, v, err := nip19.Decode(bech)
+	if err != nil {
+		return ""
+	}
+	switch {
+	case prefix == "npub":
+		pubkey, _ = v.(string)
+	case prefix == "nprofile":
+		if pp, ok := v.(nostr.ProfilePointer); ok {
+			pubkey = pp.PublicKey
+		}
+	default:
+		return ""
+	}
+	if pubkey == "" {
+		return ""
+	}
+	if name := c.profileName(pubkey); name != "" {
+		return name
+	}
+	// No known profile — a short npub is at least recognizable as a nostr user.
+	return bech[:12] + "…"
+}
+
+// profileName looks up the best display name for a hex pubkey: first the
+// newest kind-0 metadata in the relay's own store, then the relay's team
+// names (nostr.json). Returns "" when nothing is known.
+func (c *Crossposter) profileName(pubkey string) string {
+	if c.queryFn != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ch, err := c.queryFn(ctx, nostr.Filter{Kinds: []int{0}, Authors: []string{pubkey}, Limit: 1})
+		if err == nil && ch != nil {
+			if ev, ok := <-ch; ok {
+				var meta struct {
+					Name         string `json:"name"`
+					DisplayName  string `json:"display_name"`
+					DisplayName2 string `json:"displayName"`
+				}
+				if json.Unmarshal([]byte(ev.Content), &meta) == nil {
+					for _, n := range []string{meta.DisplayName, meta.DisplayName2, meta.Name} {
+						if n = strings.TrimSpace(n); n != "" {
+							cancel()
+							return n
+						}
+					}
+				}
+			}
+		}
+		cancel()
+	}
+	for name, pk := range data.Names {
+		if pk == pubkey && name != "" && name != "_" {
+			return name
+		}
+	}
+	return ""
 }
 
 // weightedTweetLen approximates X's weighted character count: every URL token
@@ -203,21 +307,69 @@ func weightedTweetLen(text string) int {
 	return length
 }
 
-// buildTweetText produces the tweet body: cleaned note text, then a link back
-// to the original note on nostr.at. If the cleaned text is too long it is
-// truncated at a word boundary with an ellipsis so the footer link always fits.
-func buildTweetText(event *nostr.Event, relayWSURL string) string {
-	text := strings.TrimSpace(cleanNostrLinks(event.Content))
+// tweetPayload carries the tweet body variants and an optional media
+// attachment URL extracted from the note.
+type tweetPayload struct {
+	text      string // cleaned text + footer link (media URL kept in)
+	textMedia string // same but with the media URL stripped ("" when no media)
+	mediaURL  string
+}
 
-	sourceLink := nostrATEventURL(event, relayWSURL)
+// buildTweetPayload produces the tweet body: cleaned note text (mentions
+// resolved to names), then a link back to the original note on nostr.at. If
+// the text is too long it is truncated at a word boundary with an ellipsis so
+// the footer link always fits. The first video URL is lifted out for media
+// attachment; textMedia is the fallback body without that URL.
+func (c *Crossposter) buildTweetPayload(event *nostr.Event) tweetPayload {
+	text := strings.TrimSpace(c.cleanForX(event.Content))
+
+	sourceLink := nostrATEventURL(event, c.relayURL)
 	// Footer is "\n\n" + link; the link counts as one URL.
 	budget := xMaxWeightedLen - 2 - xURLLen
 
-	if weightedTweetLen(text) > budget {
-		text = truncateToWeighted(text, budget-1) + "…" // ellipsis rune
-	}
+	p := tweetPayload{text: fitTweet(text, budget) + "\n\n" + sourceLink}
 
-	return text + "\n\n" + sourceLink
+	if loc := videoURLRe.FindStringIndex(text); loc != nil {
+		p.mediaURL = text[loc[0]:loc[1]]
+		stripped := collapseBlankLines(strings.Replace(text, p.mediaURL, "", 1))
+		p.textMedia = fitTweet(stripped, budget) + "\n\n" + sourceLink
+	}
+	return p
+}
+
+// buildTweetText produces the tweet body without profile-name resolution or
+// media extraction — used by tests and as the simple path.
+func buildTweetText(event *nostr.Event, relayWSURL string) string {
+	return (&Crossposter{relayURL: relayWSURL}).buildTweetPayload(event).text
+}
+
+// fitTweet truncates text to the weighted budget at a word boundary with an
+// ellipsis, or returns it unchanged when it already fits.
+func fitTweet(text string, budget int) string {
+	if weightedTweetLen(text) > budget {
+		return truncateToWeighted(text, budget-1) + "…" // ellipsis rune
+	}
+	return text
+}
+
+// collapseBlankLines squeezes runs of blank lines to one and drops trailing
+// whitespace — used after cutting a media URL out of the body.
+func collapseBlankLines(s string) string {
+	var out []string
+	blank := false
+	for _, l := range strings.Split(s, "\n") {
+		l = strings.TrimRight(l, " \t")
+		if l == "" {
+			if blank {
+				continue
+			}
+			blank = true
+		} else {
+			blank = false
+		}
+		out = append(out, l)
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
 }
 
 // nostrATEventURL builds https://nostr.at/nevent1… for the source event,

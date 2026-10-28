@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"sort"
@@ -28,7 +29,16 @@ const (
 	AuthorizeURL    = "https://api.twitter.com/oauth/authorize"
 	AccessTokenURL  = "https://api.twitter.com/oauth/access_token"
 	CreateTweetURL  = "https://api.twitter.com/2/tweets"
+	UploadMediaURL  = "https://upload.twitter.com/1.1/media/upload.json"
 )
+
+// maxMediaBytes caps the media we will download and push through the chunked
+// upload. X allows 512MB for video; we stay well under that to keep memory
+// sane — larger files fall back to a plain link in the tweet.
+const maxMediaBytes = 100 << 20 // 100 MB
+
+// mediaChunkSize must be <= 5MB per APPEND call.
+const mediaChunkSize = 4 << 20 // 4 MB
 
 // percentEncode implements RFC 5849 percent-encoding: unreserved characters
 // (A-Z a-z 0-9 - . _ ~) pass through, everything else becomes uppercase %XX.
@@ -238,6 +248,12 @@ func (c *Client) AccessToken(ctx context.Context, reqToken, reqTokenSecret, veri
 
 // PostTweet sends a user-context signed POST /2/tweets.
 func (c *Client) PostTweet(ctx context.Context, accessToken, accessSecret, text string) (tweetID string, err error) {
+	return c.PostTweetWithMedia(ctx, accessToken, accessSecret, text, nil)
+}
+
+// PostTweetWithMedia is PostTweet with uploaded media_ids attached (e.g. a
+// video from UploadMedia). An empty mediaIDs posts plain text.
+func (c *Client) PostTweetWithMedia(ctx context.Context, accessToken, accessSecret, text string, mediaIDs []string) (tweetID string, err error) {
 	params, err := c.baseParams()
 	if err != nil {
 		return "", err
@@ -252,6 +268,9 @@ func (c *Client) PostTweet(ctx context.Context, accessToken, accessSecret, text 
 	}
 
 	body := fmt.Sprintf(`{"text":%s}`, mustJSON(text))
+	if len(mediaIDs) > 0 {
+		body = fmt.Sprintf(`{"text":%s,"media":{"media_ids":%s}}`, mustJSON(text), mustJSON(mediaIDs))
+	}
 	req, err := http.NewRequestWithContext(ctx, "POST", CreateTweetURL, strings.NewReader(body))
 	if err != nil {
 		return "", err
@@ -280,13 +299,184 @@ func (c *Client) PostTweet(ctx context.Context, accessToken, accessSecret, text 
 	return "", nil
 }
 
+// signedUpload issues a signed request to the v1.1 media upload endpoint.
+// command params travel in the query string (included in the signature base);
+// multipart bodies are excluded from the signature per RFC 5849.
+func (c *Client) signedUpload(ctx context.Context, method string, query url.Values, body io.Reader, contentType, accessToken, accessSecret string) ([]byte, error) {
+	params, err := c.baseParams()
+	if err != nil {
+		return nil, err
+	}
+	params["oauth_token"] = accessToken
+	signingSecret := percentEncode(c.consumerSecret) + "&" + percentEncode(accessSecret)
+
+	rawURL := UploadMediaURL + "?" + query.Encode()
+	header, err := authHeader(method, rawURL, params, nil, signingSecret)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, rawURL, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", header)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("media upload %s failed: %s: %s", query.Get("command"), resp.Status, string(respBody))
+	}
+	return respBody, nil
+}
+
+// UploadMedia downloads mediaURL (video) and uploads it to X via the chunked
+// INIT → APPEND → FINALIZE → STATUS flow, returning the media_id for use in
+// PostTweetWithMedia. Caller should fall back to a plain-text post on error.
+func (c *Client) UploadMedia(ctx context.Context, accessToken, accessSecret, mediaURL string) (mediaID string, err error) {
+	// Download the source media (cap enforced via LimitReader+1).
+	getReq, err := http.NewRequestWithContext(ctx, "GET", mediaURL, nil)
+	if err != nil {
+		return "", err
+	}
+	dlClient := &http.Client{Timeout: 3 * time.Minute}
+	dlResp, err := dlClient.Do(getReq)
+	if err != nil {
+		return "", fmt.Errorf("downloading media: %w", err)
+	}
+	defer dlResp.Body.Close()
+	if dlResp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("downloading media: %s", dlResp.Status)
+	}
+	data, err := io.ReadAll(io.LimitReader(dlResp.Body, maxMediaBytes+1))
+	if err != nil {
+		return "", fmt.Errorf("downloading media: %w", err)
+	}
+	if len(data) > maxMediaBytes {
+		return "", fmt.Errorf("media exceeds %dMB limit", maxMediaBytes>>20)
+	}
+
+	mediaType := strings.SplitN(dlResp.Header.Get("Content-Type"), ";", 2)[0]
+	if !strings.HasPrefix(mediaType, "video/") {
+		mediaType = "video/mp4"
+	}
+
+	// INIT
+	respBody, err := c.signedUpload(ctx, "POST", url.Values{
+		"command":        {"INIT"},
+		"total_bytes":    {fmt.Sprintf("%d", len(data))},
+		"media_type":     {mediaType},
+		"media_category": {"tweet_video"},
+	}, nil, "", accessToken, accessSecret)
+	if err != nil {
+		return "", err
+	}
+	var initResp struct {
+		MediaIDString string `json:"media_id_string"`
+	}
+	if err := json.Unmarshal(respBody, &initResp); err != nil || initResp.MediaIDString == "" {
+		return "", fmt.Errorf("INIT returned no media_id: %s", string(respBody))
+	}
+	mediaID = initResp.MediaIDString
+
+	// APPEND chunks
+	for idx, off := 0, 0; off < len(data); idx, off = idx+1, off+mediaChunkSize {
+		end := off + mediaChunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		var buf bytes.Buffer
+		w := multipart.NewWriter(&buf)
+		part, err := w.CreateFormFile("media", "chunk")
+		if err != nil {
+			return "", err
+		}
+		if _, err := part.Write(data[off:end]); err != nil {
+			return "", err
+		}
+		w.Close()
+
+		// APPEND returns 2xx with empty body on success.
+		if _, err := c.signedUpload(ctx, "POST", url.Values{
+			"command":       {"APPEND"},
+			"media_id":      {mediaID},
+			"segment_index": {fmt.Sprintf("%d", idx)},
+		}, &buf, w.FormDataContentType(), accessToken, accessSecret); err != nil {
+			return "", err
+		}
+	}
+
+	// FINALIZE
+	respBody, err = c.signedUpload(ctx, "POST", url.Values{
+		"command":  {"FINALIZE"},
+		"media_id": {mediaID},
+	}, nil, "", accessToken, accessSecret)
+	if err != nil {
+		return "", err
+	}
+
+	// Video transcoding is async — poll STATUS until succeeded/failed.
+	type statusResp struct {
+		ProcessingInfo *struct {
+			State           string `json:"state"`
+			CheckAfterSecs  int    `json:"check_after_secs"`
+			ProgressPercent int    `json:"progress_percent"`
+			Error           *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		} `json:"processing_info"`
+	}
+	var fin statusResp
+	_ = json.Unmarshal(respBody, &fin)
+	for fin.ProcessingInfo != nil &&
+		(fin.ProcessingInfo.State == "pending" || fin.ProcessingInfo.State == "in_progress") {
+		wait := time.Duration(fin.ProcessingInfo.CheckAfterSecs) * time.Second
+		if wait < time.Second {
+			wait = time.Second
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(wait):
+		}
+		respBody, err = c.signedUpload(ctx, "GET", url.Values{
+			"command":  {"STATUS"},
+			"media_id": {mediaID},
+		}, nil, "", accessToken, accessSecret)
+		if err != nil {
+			return "", err
+		}
+		fin = statusResp{}
+		_ = json.Unmarshal(respBody, &fin)
+	}
+	if fin.ProcessingInfo != nil && fin.ProcessingInfo.State == "failed" {
+		msg := "processing failed"
+		if fin.ProcessingInfo.Error != nil {
+			msg = fin.ProcessingInfo.Error.Message
+		}
+		return "", fmt.Errorf("video processing: %s", msg)
+	}
+	return mediaID, nil
+}
+
 // PostViaService asks a delegate xpost service to tweet on behalf of a linked
 // account, authenticating with the per-link bearer token issued at link time.
-func PostViaService(ctx context.Context, serviceURL, linkToken, pubkey, eventID, text string) (tweetID string, err error) {
+// textMedia is the body to use if mediaURL uploads successfully (the media
+// URL stripped); on upload failure the service posts text with the URL kept.
+func PostViaService(ctx context.Context, serviceURL, linkToken, pubkey, eventID, text, textMedia, mediaURL string) (tweetID string, err error) {
 	payload, _ := json.Marshal(map[string]string{
-		"pubkey":   pubkey,
-		"event_id": eventID,
-		"text":     text,
+		"pubkey":     pubkey,
+		"event_id":   eventID,
+		"text":       text,
+		"text_media": textMedia,
+		"media_url":  mediaURL,
 	})
 
 	endpoint := strings.TrimRight(serviceURL, "/") + "/v1/post"
@@ -297,7 +487,9 @@ func PostViaService(ctx context.Context, serviceURL, linkToken, pubkey, eventID,
 	req.Header.Set("Authorization", "Bearer "+linkToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 20 * time.Second}
+	// Generous timeout: media download + chunked upload + transcode polling
+	// can take a couple of minutes for large clips.
+	client := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err

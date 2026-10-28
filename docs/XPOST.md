@@ -78,8 +78,13 @@ need them. The relay stores only a per-user link token in
 3. Click **Authorize app** — you're dropped back on the Crossposting tab,
    now showing your @handle.
 4. Leave the toggle on. Every kind-1 note you publish — including scheduled
-   notes when they go out — is posted to X automatically, cleaned up, with a
-   link back to the nostr original at the bottom.
+   notes when they go out — is posted to X automatically.
+
+**What posts look like:** people mentioned via `nostr:npub…`/`nprofile…`
+appear as their profile display name; `nostr:note`/`nevent`/`naddr` links
+become clickable `nostr.at` links; a `nostr.at` footer links back to the
+original note; `.mp4`/`.mov` video links attach as a real playable X video
+(if the upload ever fails, the tweet goes out with the plain link instead).
 
 Disconnect or pause any time from the same tab.
 
