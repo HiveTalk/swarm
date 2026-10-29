@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -149,7 +150,8 @@ func main() {
 
 	// Add authorization as header (BUD-02 format)
 	authJSON, _ := json.Marshal(authEvent)
-	req.Header.Set("Authorization", "Nostr "+string(authJSON))
+	// BUD-11 requires the token to be base64url-encoded without padding.
+	req.Header.Set("Authorization", "Nostr "+base64.RawURLEncoding.EncodeToString(authJSON))
 
 	if *verbose {
 		fmt.Printf("🔍 Debug Info:\n")
