@@ -105,6 +105,35 @@ func dashboardCookieSecure() bool {
 	return os.Getenv("DOCKER_ENV") == "true"
 }
 
+// normalizeNostrAuthToken converts a base64url(-nopad) "Nostr" auth token to
+// standard padded base64. BUD-11 mandates URL-safe base64, while older clients
+// and some servers send standard base64 — this accepts both forms and emits
+// the form StdEncoding decoders expect. Returns the input unchanged when
+// already standard base64.
+func normalizeNostrAuthToken(tok string) string {
+	std := strings.NewReplacer("-", "+", "_", "/").Replace(tok)
+	if m := len(std) % 4; m != 0 {
+		std += strings.Repeat("=", 4-m)
+	}
+	return std
+}
+
+// authNormalizeMiddleware rewrites inbound "Nostr" Authorization tokens from
+// base64url(-nopad) to standard base64 so downstream decoders — including the
+// khatru blossom library's readAuthorization, which only understands standard
+// base64 — accept both encodings. The decoded bytes are identical: the charset
+// mapping is bijective and the event fields are untouched.
+func authNormalizeMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Nostr ") {
+			if normalized := normalizeNostrAuthToken(h[6:]); normalized != h[6:] {
+				r.Header.Set("Authorization", "Nostr "+normalized)
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // verifyNIP98Request validates a NIP-98 "Authorization: Nostr <base64-event>"
 // header and returns the signer's pubkey. The signed kind-27235 event must be
 // fresh, bound to this request's method and URL path, and carry a payload hash
@@ -120,7 +149,7 @@ func verifyNIP98Request(r *http.Request) (string, error) {
 		return "", fmt.Errorf("missing or malformed NIP-98 Authorization header")
 	}
 
-	eventJSON, err := base64.StdEncoding.DecodeString(authHeader[len(prefix):])
+	eventJSON, err := base64.StdEncoding.DecodeString(normalizeNostrAuthToken(authHeader[len(prefix):]))
 	if err != nil {
 		return "", fmt.Errorf("invalid base64 token: %w", err)
 	}
@@ -428,7 +457,7 @@ func main() {
 		// Configure HTTP server with timeouts suitable for large file uploads
 		server := &http.Server{
 			Addr:              ":" + config.RelayPort,
-			Handler:           relay,
+			Handler:           authNormalizeMiddleware(relay),
 			ReadTimeout:       15 * time.Minute, // Increased to 15 minutes for very large files
 			WriteTimeout:      15 * time.Minute, // Increased to 15 minutes
 			IdleTimeout:       5 * time.Minute,  // Increased idle timeout
@@ -742,7 +771,7 @@ func main() {
 	// Configure HTTP server with timeouts suitable for large file uploads
 	server := &http.Server{
 		Addr:              ":" + config.RelayPort,
-		Handler:           relay,
+		Handler:           authNormalizeMiddleware(relay),
 		ReadTimeout:       15 * time.Minute, // Increased to 15 minutes for very large files
 		WriteTimeout:      15 * time.Minute, // Increased to 15 minutes
 		IdleTimeout:       5 * time.Minute,  // Increased idle timeout
