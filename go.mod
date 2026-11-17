@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.33.12
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.12
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.6
-	github.com/fiatjaf/eventstore v0.17.14
+	github.com/fiatjaf/eventstore v0.17.15
 	github.com/fiatjaf/khatru v0.19.1
 	github.com/joho/godotenv v1.5.1
 	github.com/nbd-wtf/go-nostr v0.52.3
