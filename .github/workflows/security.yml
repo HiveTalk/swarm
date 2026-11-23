@@ -37,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: docker build -t swarm:security .
-      - uses: aquasecurity/trivy-action@8f28faec26515256b6d22074d1d2a8986f4cbd87
+      - uses: aquasecurity/trivy-action@38b337fff0a2f984d5be173c99e3f633438167ec
         with:
           image-ref: swarm:security
           format: table
