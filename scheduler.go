@@ -565,7 +565,7 @@ func checkAuth(r *http.Request) (string, error) {
 	token := authHeader[len(prefix):]
 
 	// Decode base64 event
-	eventJSON, err := base64.StdEncoding.DecodeString(token)
+	eventJSON, err := base64.StdEncoding.DecodeString(normalizeNostrAuthToken(token))
 	if err != nil {
 		return "", fmt.Errorf("invalid base64 token: %w", err)
 	}
